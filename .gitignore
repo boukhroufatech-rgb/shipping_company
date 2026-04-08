@@ -1,0 +1,47 @@
+# هذا الملف يخبر Git بتجاهل هذه المجلدات والملفات
+# Git ignore file for Shipping Company Application
+
+# === قاعدة البيانات والنسخ الاحتياطية ===
+*.db
+*.db-shm
+*.db-wal
+backups/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# === البيئة الافتراضية ===
+venv/
+env/
+.env
+.venv
+
+# === نظام Windows ===
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# === أدوات التطوير ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === السجلات ===
+*.log
+logs/
+
+# === ملفات مؤقتة ===
+*.tmp
+*.temp
+temp/
+tmp/
