@@ -246,3 +246,13 @@ QWidget#statusFilterContainer QComboBox QAbstractItemView {{
 def get_theme_qss(theme_id="emerald"):
     theme = THEMES.get(theme_id, THEMES["emerald"])
     return QSS_TEMPLATE.format(**theme["colors"])
+
+
+def get_active_colors() -> dict:
+    """Retourne les couleurs du thème actif. Utilisable depuis tout composant."""
+    try:
+        from modules.settings.service import SettingsService
+        theme_id = SettingsService().get_setting("active_theme", "emerald")
+        return THEMES.get(theme_id, THEMES["emerald"])["colors"]
+    except Exception:
+        return THEMES["emerald"]["colors"]

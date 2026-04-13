@@ -15,7 +15,7 @@ from datetime import datetime
 
 from components.dialogs import show_error, show_success, confirm_action
 from .service import SettingsService
-from core.themes import THEMES, get_theme_qss
+from core.themes import THEMES, get_theme_qss, get_active_colors
 from PyQt6.QtWidgets import QApplication
 
 
@@ -29,25 +29,19 @@ class SettingsView(QWidget):
         self.load_settings()
 
     def _create_save_button(self, text: str, callback) -> QPushButton:
-        """[TREE] Bouton de sauvegarde unifié - Nom, taille, style واحد"""
+        """[TREE] Bouton de sauvegarde unifié - thème actif"""
+        c = get_active_colors()
         btn = QPushButton(text)
         btn.setFixedHeight(40)
         btn.setMinimumWidth(200)
-        btn.setStyleSheet("""
-            QPushButton {
-                font-weight: bold;
-                font-size: 13px;
-                background-color: #1f6feb;
-                color: white;
-                border-radius: 6px;
-                padding: 8px 20px;
-            }
-            QPushButton:hover {
-                background-color: #388bfd;
-            }
-            QPushButton:pressed {
-                background-color: #1a5dc9;
-            }
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                font-weight: bold; font-size: 13px;
+                background-color: {c['accent']}; color: #ffffff;
+                border-radius: 6px; padding: 8px 20px;
+            }}
+            QPushButton:hover {{ background-color: {c['accent_hover']}; }}
+            QPushButton:pressed {{ background-color: {c['selection']}; }}
         """)
         btn.clicked.connect(callback)
         return btn
@@ -621,8 +615,9 @@ class SettingsView(QWidget):
 
         btn_layout = QHBoxLayout()
 
+        _c = get_active_colors()
         self.btn_backup = QPushButton("Nouvelle Sauvegarde")
-        self.btn_backup.setStyleSheet("padding: 12px 24px; font-weight: bold; background-color: #238636; color: white;")
+        self.btn_backup.setStyleSheet(f"padding: 12px 24px; font-weight: bold; background-color: {_c['accent']}; color: #ffffff;")
         self.btn_backup.clicked.connect(self.create_backup)
 
         self.btn_restore = QPushButton("Restaurer la selection")
@@ -710,17 +705,14 @@ class SettingsView(QWidget):
         vbox.addWidget(self.theme_selector)
 
         btn_apply = QPushButton("Appliquer le Theme")
-        btn_apply.setStyleSheet("""
-            QPushButton {
+        _tc = get_active_colors()
+        btn_apply.setStyleSheet(f"""
+            QPushButton {{
                 padding: 12px 24px;
-                background-color: #1f6feb;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #388bfd;
-            }
+                background-color: {_tc['accent']}; color: #ffffff;
+                font-weight: bold; border-radius: 8px;
+            }}
+            QPushButton:hover {{ background-color: {_tc['accent_hover']}; }}
         """)
         btn_apply.clicked.connect(self._apply_theme)
         vbox.addWidget(btn_apply)

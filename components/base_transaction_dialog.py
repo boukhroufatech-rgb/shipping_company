@@ -39,6 +39,22 @@ class BaseTransactionDialog(QDialog):
         self._entity_config = None
         self._amount_input = None
         self._sim_label = None
+        from core.themes import get_active_colors
+        self._c = get_active_colors()
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {self._c['bg_main']}; }}
+            QLabel {{ color: {self._c['text_main']}; }}
+            QLineEdit, QTextEdit, QComboBox, QDateEdit {{
+                background-color: {self._c['bg_secondary']}; color: {self._c['text_main']};
+                border: 1px solid {self._c['border']}; border-radius: 4px; padding: 4px;
+            }}
+            QPushButton {{
+                background-color: {self._c['accent']}; color: #ffffff;
+                border: none; padding: 6px 16px; border-radius: 4px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {self._c['accent_hover']}; }}
+            QPushButton:disabled {{ background-color: {self._c['bg_secondary']}; color: {self._c['text_secondary']}; }}
+        """)
         
     def set_entity_config(self, label: str, get_entities_func, get_balance_func, 
                          entity_name: str = "Entité", currency: str = "DA"):
@@ -68,12 +84,11 @@ class BaseTransactionDialog(QDialog):
         
         # Balance label
         self._balance_label = QLabel()
-        self._balance_label.setStyleSheet("""
-            QLabel {
-                color: #7d8590;
-                font-size: 12px;
-                padding: 4px;
-            }
+        self._balance_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self._c.get('text_secondary', '#7d8590')};
+                font-size: 12px; padding: 4px;
+            }}
         """)
         
         # Connect signal
@@ -97,14 +112,12 @@ class BaseTransactionDialog(QDialog):
         
         # Simulation label
         self._sim_label = QLabel()
-        self._sim_label.setStyleSheet("""
-            QLabel {
-                background-color: #0d1117;
-                color: #e6edf3;
-                padding: 8px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
+        self._sim_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {self._c.get('bg_secondary', '#0d1117')};
+                color: {self._c.get('text_main', '#e6edf3')};
+                padding: 8px; border-radius: 4px; font-weight: bold;
+            }}
         """)
         layout.addRow("", self._sim_label)
         
@@ -150,20 +163,25 @@ class BaseTransactionDialog(QDialog):
         # Customize button text
         btn_ok = btns.button(QDialogButtonBox.StandardButton.Ok)
         btn_ok.setText(accept_text)
-        btn_ok.setStyleSheet("""
-            QPushButton {
-                background-color: #238636;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #2ea043; }
+        btn_ok.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self._c.get('accent', '#238636')}; color: #ffffff;
+                border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {self._c.get('accent_hover', '#2ea043')}; }}
         """)
-        
+
         btn_cancel = btns.button(QDialogButtonBox.StandardButton.Cancel)
         btn_cancel.setText(reject_text)
+        btn_cancel.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self._c.get('bg_tertiary', '#21262d')};
+                color: {self._c.get('text_main', '#e6edf3')};
+                border: 1px solid {self._c.get('border', '#30363d')};
+                padding: 8px 16px; border-radius: 6px;
+            }}
+            QPushButton:hover {{ background-color: {self._c.get('bg_secondary', '#161b22')}; }}
+        """)
         
         layout.addWidget(btns)
         return btns

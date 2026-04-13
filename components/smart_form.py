@@ -31,6 +31,27 @@ class SmartFormDialog(QDialog):
 
     def _set_ui_shell(self):
         """1. Le générique (The Generic Shell)"""
+        from core.themes import get_active_colors
+        c = get_active_colors()
+        self._theme_colors = c
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {c['bg_main']}; }}
+            QLabel {{ color: {c['text_main']}; }}
+            QLineEdit, QTextEdit, QComboBox, QDateEdit {{
+                background-color: {c['bg_secondary']}; color: {c['text_main']};
+                border: 1px solid {c['border']}; border-radius: 4px; padding: 4px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {c['bg_secondary']}; color: {c['text_main']};
+                selection-background-color: {c['accent']}; selection-color: #ffffff;
+            }}
+            QPushButton {{
+                background-color: {c['accent']}; color: #ffffff;
+                border: none; padding: 6px 16px; border-radius: 4px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {c['accent_hover']}; }}
+            QPushButton:disabled {{ background-color: {c['bg_secondary']}; color: {c['text_secondary']}; }}
+        """)
         self.main_layout = QVBoxLayout(self)
         self.form_layout = QFormLayout()
 
@@ -113,24 +134,23 @@ class SmartFormDialog(QDialog):
             completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
             w.setCompleter(completer)
             
-            # [CUSTOM] 2026-04-03 - Styliser le popup avec highlight
+            # [CUSTOM] 2026-04-03 - Styliser le popup avec highlight (thème actif)
+            c = getattr(self, '_theme_colors', {})
             popup = completer.popup()
-            popup.setStyleSheet("""
-                QListView {
-                    background-color: #112e2a;
-                    color: #e6edf3;
-                    border: 1px solid #214d47;
-                }
-                QListView::item {
-                    padding: 8px;
-                }
-                QListView::item:selected {
-                    background-color: #2ea043;
+            popup.setStyleSheet(f"""
+                QListView {{
+                    background-color: {c.get('bg_secondary', '#112e2a')};
+                    color: {c.get('text_main', '#e6edf3')};
+                    border: 1px solid {c.get('border', '#214d47')};
+                }}
+                QListView::item {{ padding: 8px; }}
+                QListView::item:selected {{
+                    background-color: {c.get('accent', '#2ea043')};
                     color: white;
-                }
-                QListView::item:hover {
-                    background-color: #1a3d38;
-                }
+                }}
+                QListView::item:hover {{
+                    background-color: {c.get('bg_tertiary', '#1a3d38')};
+                }}
             """)
             
             # [CUSTOM] 2026-04-03 - Highlight search text en jaune
@@ -149,23 +169,22 @@ class SmartFormDialog(QDialog):
         popup = completer.popup()
         model = completer.model()
         
-        # Appliquer le style
-        popup.setStyleSheet("""
-            QListView {
-                background-color: #112e2a;
-                color: #e6edf3;
-                border: 1px solid #214d47;
-            }
-            QListView::item {
-                padding: 8px;
-            }
-            QListView::item:selected {
-                background-color: #2ea043;
+        # Appliquer le style (thème actif)
+        c = getattr(self, '_theme_colors', {})
+        popup.setStyleSheet(f"""
+            QListView {{
+                background-color: {c.get('bg_secondary', '#112e2a')};
+                color: {c.get('text_main', '#e6edf3')};
+                border: 1px solid {c.get('border', '#214d47')};
+            }}
+            QListView::item {{ padding: 8px; }}
+            QListView::item:selected {{
+                background-color: {c.get('accent', '#2ea043')};
                 color: white;
-            }
-            QListView::item:hover {
-                background-color: #1a3d38;
-            }
+            }}
+            QListView::item:hover {{
+                background-color: {c.get('bg_tertiary', '#1a3d38')};
+            }}
         """)
 
     def _apply_initial_value(self, widget, field: dict, value):

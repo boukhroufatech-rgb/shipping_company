@@ -91,6 +91,17 @@ class ConfirmDialog(QDialog):
 
     def _setup_ui(self, message: str):
         """Configure l'interface"""
+        from core.themes import get_active_colors
+        c = get_active_colors()
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {c['bg_main']}; }}
+            QLabel {{ color: {c['text_main']}; }}
+            QPushButton {{
+                background-color: {c['accent']}; color: #ffffff;
+                border: none; padding: 6px 16px; border-radius: 4px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {c['accent_hover']}; }}
+        """)
         layout = QVBoxLayout(self)
 
         # Message
