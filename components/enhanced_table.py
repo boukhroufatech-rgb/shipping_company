@@ -839,13 +839,16 @@ class EnhancedTableView(QWidget):
         # [WHY]: ToolButtonTextOnly بدون تنسيق يُظهر أزراراً بدون إطار مميز.
         #        هذا التنسيق يعيد الإطار (Border) ليبقى البرنامج احترافياً ومتناسقاً.
         # [DATE]: 2026-03-29
-        toolbar.setStyleSheet("""
-            QToolBar {
+        _text = THEMES.get(self.active_theme, THEMES["emerald"])["colors"].get("text_main", "#e6edf3")
+        _text_sec = THEMES.get(self.active_theme, THEMES["emerald"])["colors"].get("text_secondary", "#7d8590")
+        toolbar.setStyleSheet(f"""
+            QToolBar {{
                 border: none;
                 spacing: 3px;
                 padding: 4px 6px;
-            }
-            QToolBar QToolButton {
+            }}
+            QToolBar QToolButton {{
+                color: {_text};
                 border: 1px solid rgba(255,255,255,0.12);
                 border-radius: 5px;
                 padding: 4px 12px;
@@ -853,19 +856,24 @@ class EnhancedTableView(QWidget):
                 font-weight: bold;
                 font-size: 12px;
                 min-width: 60px;
-            }
-            QToolBar QToolButton:hover {
+            }}
+            QToolBar QToolButton:hover {{
+                color: {_text};
                 border-color: rgba(255,255,255,0.35);
                 background-color: rgba(255,255,255,0.08);
-            }
-            QToolBar QToolButton:pressed {
+            }}
+            QToolBar QToolButton:pressed {{
+                color: {_text};
                 background-color: rgba(255,255,255,0.15);
-            }
-            QToolBar::separator {
+            }}
+            QToolBar QToolButton:disabled {{
+                color: {_text_sec};
+            }}
+            QToolBar::separator {{
                 width: 1px;
                 background: rgba(255,255,255,0.1);
                 margin: 4px 3px;
-            }
+            }}
         """)
         
         self.add_action = QAction("Nouveau", self)
