@@ -7,6 +7,7 @@ from utils.constants import (
     DEFAULT_CURRENCY_CODE, DEFAULT_CURRENCY_NAME, DEFAULT_CURRENCY_SYMBOL,
     SUPPLIER_TYPE_CURRENCY
 )
+from utils.logger import log_info
 
 def initialize_system_data():
     """Initialise toutes les données par défaut nécessaires au fonctionnement du système"""
@@ -26,7 +27,7 @@ def initialize_system_data():
             )
             session.add(da)
             session.flush()
-            print(f"✓ Devise par défaut créée: {DEFAULT_CURRENCY_CODE}")
+            log_info(f"Devise par défaut créée: {DEFAULT_CURRENCY_CODE}", context="init_data")
         else:
             da.is_active = True
             da.is_default = True
@@ -67,7 +68,7 @@ def initialize_system_data():
             )
             session.add(main_account)
             session.flush()
-            print("✓ Compte principal créé.")
+            log_info("Compte principal créé.", context="init_data")
 
         # 3. COMPTES PARA-DEVISES (Caisses USD, EUR...)
         all_active_currencies = session.query(Currency).filter(Currency.code != DEFAULT_CURRENCY_CODE).all()
@@ -105,7 +106,7 @@ def initialize_system_data():
             )
             session.add(default_supplier)
             session.flush()
-            print("✓ Fournisseur de devises par défaut créé (Changeur).")
+            log_info("Fournisseur de devises par défaut créé (Changeur).", context="init_data")
         
         # 4. TYPES DE FRAIS PAR DÉFAUT
         default_types = [
@@ -136,10 +137,8 @@ def initialize_system_data():
             )
             session.add(main_warehouse)
             session.flush()
-            print("✓ Entrepôt principal créé.")
+            log_info("Entrepôt principal créé.", context="init_data")
 
         session.commit()
         
-        # Utiliser logger au lieu de print pour éviter les erreurs Unicode
-        from utils.logger import log_success
-        log_success("Système prêt et synchronisé", context="INIT")
+        log_info("Système prêt et synchronisé", context="init_data")

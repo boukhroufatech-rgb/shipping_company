@@ -171,7 +171,7 @@ THEMES = {
 # 2. 📝 TEMPLATE QSS GLOBAL (Multi-Thème)
 # -------------------------------------
 QSS_TEMPLATE = """
-QMainWindow {{ background-color: {bg_main}; }}
+QMainWindow, QDialog, QWidget {{ background-color: {bg_main}; color: {text_main}; }}
 
 /* Onglets Custom */
 QTabWidget::pane {{ border: 1px solid {border}; background-color: {bg_main}; top: -1px; }}

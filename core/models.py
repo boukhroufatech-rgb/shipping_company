@@ -111,6 +111,9 @@ class CurrencySupplier(Base, AuditMixin):
     phone = Column(String(50))
     email = Column(String(100))
     address = Column(Text)
+    company_name = Column(String(300))  # Nom complet de la societe
+    company_address = Column(Text)      # Adresse complete de la societe
+    country = Column(String(100))       # Pays d'operation
     balance = Column(Float, default=0.0)  # Dette envers le fournisseur
     currency_id = Column(Integer, ForeignKey("currencies.id"), nullable=True) # Devise de traitement
     supplier_type = Column(String(50), default="CURRENCY", nullable=False) # CURRENCY, LICENSE, SHIPPING
@@ -411,6 +414,7 @@ class ContainerFile(Base, AuditMixin):
     shipping_supplier_id = Column(Integer, ForeignKey("currency_suppliers.id"), nullable=True)
     container_number = Column(String(100), nullable=False)
     bill_number = Column(String(100))
+    shipment_type = Column(String(50), default="MARITIME")  # MARITIME, TERRESTRIAL, AERIAL
     products_type = Column(String(200)) # Type de produits
     used_usd_amount = Column(Float, nullable=False) # Part du traitement utilisé
     customs_value_dzd = Column(Float, default=0.0) # Valeur de jumerka

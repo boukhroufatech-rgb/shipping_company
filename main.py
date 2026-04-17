@@ -126,7 +126,14 @@ class MainApp(QMainWindow):
         self.catalog_view.dataChanged.connect(self.refresh_all)
         self.tabs.addTab(self.catalog_view, "Catalog Management")
 
-        # 11. Paramètres
+        # 11. Dépenses
+        from modules.expenses.views import ExpensesView
+        self.expenses_view = ExpensesView()
+        self.expenses_view.loaded = False
+        self.expenses_view.dataChanged.connect(self.refresh_all)
+        self.tabs.addTab(self.expenses_view, "Dépenses")
+
+        # 12. Paramètres
         from modules.settings.views import SettingsView
         self.settings_view = SettingsView()
         self.tabs.addTab(self.settings_view, "Paramètres")
@@ -185,7 +192,7 @@ class MainApp(QMainWindow):
         except Exception as e:
             # En cas d'erreur, on marque quand même comme chargé pour éviter une boucle
             widget.loaded = True
-            print(f"Erreur chargement lazy: {e}")
+            log_error(e, context="MainApp._load_tab_data.lazy")
 
     def refresh_all(self):
         """Rafraîchit les données de tous les onglets de manière sécurisée"""
@@ -207,7 +214,8 @@ class MainApp(QMainWindow):
                 ("Logistique", self.logistics_view),
                 ("Dettes", self.debt_view),
                 ("Associés", self.partners_view),
-                ("Entrepôts", self.warehouse_view)
+                ("Entrepôts", self.warehouse_view),
+                ("Dépenses", self.expenses_view)
             ]
 
             # Rafraîchir chaque vue individuellement avec protection
@@ -272,7 +280,6 @@ if __name__ == "__main__":
         log_info("Base de données initialisée avec succès", context="MainApp.__main__")
     except Exception as e:
         log_error(e, context="MainApp.__main__.init_database")
-        print(f"❌ Erreur critique lors de l'initialisation de la base de données: {e}")
         sys.exit(1)
 
     # Validation et insertion des données de base du système (Devises, Comptes)
@@ -283,7 +290,6 @@ if __name__ == "__main__":
         log_info("Données système initialisées avec succès", context="MainApp.__main__")
     except Exception as e:
         log_error(e, context="MainApp.__main__.initialize_system_data")
-        print(f"⚠️ Erreur lors de l'initialisation des données système: {e}")
 
     # 1.5. Sauvegarde automatique au demarrage (si configuree)
     try:
@@ -304,7 +310,6 @@ if __name__ == "__main__":
         app.setStyleSheet(get_theme_qss(active_theme))
     except Exception as e:
         log_error(e, context="MainApp.__main__.load_theme")
-        print(f"⚠️ Erreur lors du chargement du thème: {e}. Utilisation du thème Emerald par défaut.")
         app.setStyleSheet(get_theme_qss("emerald"))
 
     # 3. Lancement

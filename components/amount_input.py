@@ -95,15 +95,16 @@ class AmountInput(QWidget):
     def setValue(self, value: float):
         """
         Définit la valeur.
-        
+
         Args:
             value: Valeur à définir
         """
-        if value > 0:
+        if value is None:
+            self.input.clear()
+        else:
+            value = float(value) if value else 0.0
             formatted = f"{value:,.2f}".replace(",", " ")
             self.input.setText(formatted)
-        else:
-            self.input.clear()
     
     def setCurrencySymbol(self, symbol: str):
         """

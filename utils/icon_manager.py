@@ -7,6 +7,7 @@ import os
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtCore import QSize, Qt
+from utils.logger import log_error, log_warning
 
 class IconManager:
     _cache = {}
@@ -60,7 +61,7 @@ class IconManager:
             svg_full_path = os.path.join(cls._icon_path, f"{name}.svg")
         
         if not os.path.exists(svg_full_path):
-            print(f"⚠️ IconManager: {name}.svg non trouvé.")
+            log_warning(f"IconManager: {name}.svg non trouvé.", context="IconManager")
             return QIcon()
 
         try:
@@ -87,7 +88,7 @@ class IconManager:
             return icon
 
         except Exception as e:
-            print(f"❌ Erreur IconManager ({name}): {e}")
+            log_error(e, context=f"IconManager.{name}")
             return QIcon()
 
     @classmethod

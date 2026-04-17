@@ -81,6 +81,7 @@ class LogisticsService:
                 result.append({
                     "id": lic.id,
                     "date": lic.date,
+                    "supplier_id": lic.supplier_id,
                     "supplier_name": supplier_name,
                     "license_type": lic.license_type or "",
                     "total_usd": lic.total_usd,
@@ -170,10 +171,14 @@ class LogisticsService:
                 total_cartons = sum(g["qty"] for g in cont["goods"])
 
                 # 3. Mettre a jour le conteneur
+                old_equivalent_dzd = container.equivalent_dzd or 0
+                new_equivalent_dzd = shipment.get("equivalent_dzd", 0)
+
                 container.container_number = cont["number"]
                 container.bill_number = shipment["bill_number"]
                 container.invoice_number = shipment.get("invoice_number", "")
                 container.shipping_supplier_id = shipment.get("agent_id")
+                container.shipment_type = shipment.get("shipment_type", "MARITIME")
                 container.used_usd_amount = total_usd
                 container.cbm = total_cbm
                 container.cartons = total_cartons
@@ -181,10 +186,15 @@ class LogisticsService:
                 container.discharge_port = shipment.get("port", "")
                 container.taux = shipment.get("exchange_rate", 0)
                 container.taux_expedition = shipment.get("shipment_rate", 0)
-                container.equivalent_dzd = shipment.get("equivalent_dzd", 0)
+                container.equivalent_dzd = new_equivalent_dzd
                 container.equivalent_expedition = shipment.get("equivalent_expedition", 0)
-                if shipment.get("date"):
-                    container.shipping_date = shipment["date"]
+                container.shipping_date = shipment.get("date") or container.shipping_date
+
+                # 4. Ajuster la domiciliation et le solde du fournisseur
+                equiv_diff = new_equivalent_dzd - old_equivalent_dzd
+                if equiv_diff != 0:
+                    container.license.total_domiciliations = (container.license.total_domiciliations or 0) + equiv_diff
+                    container.license.supplier.balance -= equiv_diff
 
                 # 4. Supprimer les anciennes marchandises
                 session.query(CustomerGoods).filter_by(container_id=container_id).delete()
@@ -331,6 +341,11 @@ class LogisticsService:
                     'charge_da': c.charge_da or 0.0,
                     'charge_port': c.charge_port or 0.0,
                     'surestarie': c.surestarie or 0.0,
+                    'shipment_type': c.shipment_type or "MARITIME",
+                    'taux': c.taux or 0.0,
+                    'taux_expedition': c.taux_expedition or 0.0,
+                    'equivalent_dzd': c.equivalent_dzd or 0.0,
+                    'equivalent_expedition': c.equivalent_expedition or 0.0,
                 } for c in containers
             ]
 
@@ -390,6 +405,7 @@ class LogisticsService:
                         container_number=cont["number"],
                         bill_number=shipment["bill_number"],
                         invoice_number=shipment.get("invoice_number", ""),
+                        shipment_type=shipment.get("shipment_type", "MARITIME"),
                         products_type="",
                         used_usd_amount=amount_per_container,
                         cbm=total_cbm,
@@ -426,6 +442,12 @@ class LogisticsService:
 
                 # 4. Mettre a jour la licence
                 lic.used_usd += total_usd
+
+                # 5. Mettre à jour la domiciliation et le solde du fournisseur
+                equivalent_dzd = shipment.get("equivalent_dzd", 0)
+                if equivalent_dzd > 0:
+                    lic.total_domiciliations = (lic.total_domiciliations or 0) + equivalent_dzd
+                    lic.supplier.balance -= equivalent_dzd
 
                 session.commit()
                 return True, f"Facture creee: {len(containers)} conteneur(s), {sum(len(c['goods']) for c in containers)} marchandise(s)"

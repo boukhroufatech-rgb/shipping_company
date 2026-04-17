@@ -19,6 +19,7 @@ from components.dialogs import show_error, show_success, confirm_action, create_
 from components.enhanced_table import EnhancedTableView
 from components.catalog_dialog import GenericCatalogDialog
 from utils.formatters import format_amount
+from utils.logger import log_error
 
 
 class ShipmentWizard(QDialog):
@@ -32,6 +33,9 @@ class ShipmentWizard(QDialog):
         self.currency_service = currency_service
         self.treasury_service = treasury_service
         self.customer_service = customer_service
+
+        from modules.logistics.expense_service import ExpenseService
+        self.expense_service = ExpenseService()
 
         self.edit_container_id = edit_container_id
         self.is_edit = edit_container_id is not None
@@ -99,6 +103,10 @@ class ShipmentWizard(QDialog):
         self.btn_prev.setStyleSheet("padding: 10px 20px;")
         self.btn_prev.clicked.connect(self._prev_step)
 
+        self.btn_add_expense = QPushButton("+ Ajouter Coût")
+        self.btn_add_expense.setStyleSheet("padding: 10px 20px; background-color: #388bfd; color: white;")
+        self.btn_add_expense.clicked.connect(self._add_expense)
+
         self.page_label = QLabel("Etape 1/3")
         self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.page_label.setStyleSheet("font-weight: bold; color: #58a6ff;")
@@ -113,6 +121,7 @@ class ShipmentWizard(QDialog):
 
         nav.addWidget(self.btn_cancel)
         nav.addWidget(self.btn_prev)
+        nav.addWidget(self.btn_add_expense)
         nav.addStretch()
         nav.addWidget(self.page_label)
         nav.addStretch()
@@ -164,6 +173,12 @@ class ShipmentWizard(QDialog):
             )
         self.license_widget = create_quick_add_layout(self.license_combo, self._quick_add_license)
         form.addRow("Licence:", self.license_widget)
+
+        self.shipment_type_combo = QComboBox()
+        self.shipment_type_combo.addItem("🚢 Maritime", "MARITIME")
+        self.shipment_type_combo.addItem("🚚 Terrestre", "TERRESTRIAL")
+        self.shipment_type_combo.addItem("✈️ Aérien", "AERIAL")
+        form.addRow("Type de Shp:", self.shipment_type_combo)
 
         self.transfer_amount = AmountInput()
         self.transfer_amount.input.textChanged.connect(self._calculate_equivalent)
@@ -254,7 +269,7 @@ class ShipmentWizard(QDialog):
             {'name': 'license_type', 'label': "Type de marchandise", 'type': 'text'},
             {'name': 'total_usd', 'label': 'Montant Total (USD)', 'type': 'number', 'required': True},
             {'name': 'total_dzd', 'label': 'Prix Total Facture (DA)', 'type': 'number', 'required': True},
-            {'name': 'commission_rate', 'label': '% Commission Dedouanement', 'type': 'number', 'default': 30.0},
+            {'name': 'commission_rate', 'label': '% Commission Dédouanement (0-100)', 'type': 'number', 'default': 30.0, 'placeholder': 'Ex: 30 (سيُحسب كـ 30%)'},
             {'name': 'notes', 'label': 'Notes', 'type': 'text'},
         ]
 
@@ -849,14 +864,19 @@ class ShipmentWizard(QDialog):
             return
 
         # Page 1: Informations facture
-        if cont.get('date_opened'):
+        if cont.get('shipping_date'):
+            d = cont['shipping_date']
+            self.date_input.setDate(QDate(d.year, d.month, d.day))
+        elif cont.get('date_opened'):
             d = cont['date_opened']
             self.date_input.setDate(QDate(d.year, d.month, d.day))
         self.bill_input.setText(cont.get('bill_number', ''))
         self.invoice_input.setText(cont.get('invoice_number', ''))
         self.port_input.setText(cont.get('discharge_port', ''))
         self.transitaire_input.setText(cont.get('transitaire', ''))
-        self.transfer_amount.setValue(cont.get('used_usd_amount', 0))
+        self.transfer_amount.setValue(cont.get('used_usd_amount') or 0)
+        self.exchange_rate.setValue(cont.get('taux') or 0)
+        self.shipment_rate.setValue(cont.get('taux_expedition') or 0)
 
         # Selectionner l'agent
         if cont.get('shipping_supplier_id'):
@@ -869,6 +889,12 @@ class ShipmentWizard(QDialog):
             idx = self.license_combo.findData(cont['license_id'])
             if idx >= 0:
                 self.license_combo.setCurrentIndex(idx)
+
+        # Selectionner le type de shp
+        shipment_type = cont.get('shipment_type', 'MARITIME')
+        idx = self.shipment_type_combo.findData(shipment_type)
+        if idx >= 0:
+            self.shipment_type_combo.setCurrentIndex(idx)
 
         # Page 2: Conteneur existant (un seul en mode edition)
         self.containers_data = [{
@@ -901,7 +927,7 @@ class ShipmentWizard(QDialog):
                         "total": (g.cbm * (g.cbm_price_usd or 0)) - (g.discount_usd or 0)
                     })
         except Exception as e:
-            print(f"[WARNING] Erreur chargement marchandises: {e}")
+            log_error(e, context="ShipmentWizard._load_goods")
 
     # ========================================================================
     # SAUVEGARDE
@@ -919,6 +945,7 @@ class ShipmentWizard(QDialog):
                 "agent_id": self.agent_combo.currentData(),
                 "invoice_number": self.invoice_input.text().strip(),
                 "license_id": self.license_combo.currentData(),
+                "shipment_type": self.shipment_type_combo.currentData(),
                 "transfer_amount_usd": self.transfer_amount.get_amount(),
                 "exchange_rate": self.exchange_rate.get_amount(),
                 "equivalent_dzd": self.transfer_amount.get_amount() * self.exchange_rate.get_amount(),
@@ -943,3 +970,24 @@ class ShipmentWizard(QDialog):
             self.accept()
         else:
             show_error(self, "Erreur", msg)
+
+    def _add_expense(self):
+        """Ouvrir le dialogue pour ajouter une dépense liée à cette facture"""
+        # Vérifier que la licence est sélectionnée
+        license_id = self.license_combo.currentData()
+        if not license_id:
+            show_error(self, "Erreur", "Sélectionnez d'abord une licence")
+            return
+
+        from modules.expenses.views import ExpenseDialog
+        dialog = ExpenseDialog(
+            self.expense_service, self.logistics_service,
+            self.currency_service, self.treasury_service,
+            self.customer_service, parent=self
+        )
+
+        # Pré-remplir la licence (si le dialogue le permet)
+        # Note: le dialogue s'ouvrira en mode normal, l'utilisateur peut lier à la licence ou conteneur
+        if dialog.exec():
+            show_success(self, "Succès", "Coût ajouté avec succès")
+            # Pas besoin de recharger les données du wizard

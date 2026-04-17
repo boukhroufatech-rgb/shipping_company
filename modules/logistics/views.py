@@ -29,7 +29,6 @@ from utils.constants import (
 from modules.currency.views import SuppliersTab
 
 from .service import LogisticsService
-from .expense_service import ExpenseService
 from modules.currency.service import CurrencyService
 from modules.treasury.service import TreasuryService
 from modules.settings.service import SettingsService
@@ -46,7 +45,7 @@ LICENSE_SCHEMA = [
     {'name': 'license_type', 'label': "Type de marchandise", 'type': 'dropdown', 'options': []},
     {'name': 'total_usd', 'label': 'Montant Total (USD)', 'type': 'number', 'required': True},
     {'name': 'total_dzd', 'label': 'Prix Total Facture (DA)', 'type': 'number', 'required': True, 'placeholder': 'Prix payé pour le traitement'},
-    {'name': 'commission_rate', 'label': '% Commission Dédouanement', 'type': 'number', 'default': 30.0, 'placeholder': 'Ex: 30.0'},
+    {'name': 'commission_rate', 'label': '% Commission Dédouanement (0-100)', 'type': 'number', 'default': 30.0, 'placeholder': 'Ex: 30 (سيُحسب كـ 30%)'},
     {'name': 'notes', 'label': 'Notes', 'type': 'text'},
 ]
 
@@ -65,7 +64,6 @@ class LogisticsView(QWidget):
     def __init__(self):
         super().__init__()
         self.service = LogisticsService()
-        self.expense_service = ExpenseService()
         self.currency_service = CurrencyService()
         self.treasury_service = TreasuryService()
         self.settings_service = SettingsService()
@@ -73,13 +71,13 @@ class LogisticsView(QWidget):
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        
+
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-        
-        self.agents_tab = SuppliersTab(self.currency_service, self.treasury_service, self.settings_service, supplier_type_filter=SUPPLIER_TYPE_SHIPPING)
+
+        self.agents_tab = AgentsMariimesTab(self.service, self.currency_service, self.treasury_service)
         self.agents_tab.dataChanged.connect(self.dataChanged.emit)
-        self.tabs.addTab(self.agents_tab, "Agents")
+        self.tabs.addTab(self.agents_tab, "Agents Maritimes")
 
         self.agent_payments_tab = AgentPaymentsTab(self.currency_service, self.treasury_service)
         self.agent_payments_tab.dataChanged.connect(self.dataChanged.emit)
@@ -89,17 +87,227 @@ class LogisticsView(QWidget):
         self.containers_tab.dataChanged.connect(self.dataChanged.emit)
         self.tabs.addTab(self.containers_tab, "Factures")
 
-        from modules.customers.service import CustomerService
-        self.customer_service = CustomerService()
-        self.expenses_tab = ExpensesTab(self.expense_service, self.service, self.currency_service, self.treasury_service, self.settings_service, self.customer_service)
-        self.expenses_tab.dataChanged.connect(self.dataChanged.emit)
-        self.tabs.addTab(self.expenses_tab, "Dépenses")
-        
+        self.container_costs_tab = ContainerCostsTab(self.service)
+        self.tabs.addTab(self.container_costs_tab, "Coûts Conteneurs")
+
     def refresh(self):
         self.agents_tab.load_data()
         self.agent_payments_tab.load_data()
         self.containers_tab.load_data()
-        self.expenses_tab.load_data()
+        self.container_costs_tab.load_data()
+
+
+# ============================================================================
+# AGENTS MARITIMES TAB
+# ============================================================================
+
+class AgentsMariimesTab(QWidget):
+    """Tab 1 — Vue comprehensive des agents maritimes avec métriques de performance"""
+    dataChanged = pyqtSignal()
+
+    def __init__(self, service: LogisticsService, currency_service: CurrencyService, treasury_service: TreasuryService):
+        super().__init__()
+        self.service = service
+        self.currency_service = currency_service
+        self.treasury_service = treasury_service
+        self._setup_ui()
+        self.load_data()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        self.table = EnhancedTableView(table_id="agents_maritimes")
+        self.table.set_headers([
+            "N°", "ID", "Agent", "Pays",
+            "CHIFFRE D'AFFAIRE (DA)", "N° Factures", "N° Conteneurs",
+            "Paiements Reçus (DA)", "Montant Dû (DA)", "Paiements Attente (DA)",
+            "Solde (DA)", "Taux de Recouvrement (%)",
+            "Devise", "Adresse Société"
+        ])
+
+        self.table.addClicked.connect(self._new_agent)
+        self.table.editClicked.connect(self._edit_agent)
+        self.table.deleteClicked.connect(self._delete_agent)
+        self.table.restoreClicked.connect(self._restore_agent)
+        self.table.refreshClicked.connect(self.load_data)
+        self.table.status_filter.statusChanged.connect(self.load_data)
+        layout.addWidget(self.table)
+
+    def load_data(self):
+        filter_status = self.table.status_filter.get_filter()
+        self.table.update_actions_for_status(filter_status)
+
+        agents = self.currency_service.get_all_suppliers(supplier_type=SUPPLIER_TYPE_SHIPPING, filter_status=filter_status)
+        containers = self.service.get_all_containers(filter_status="all")
+        payments = self.currency_service.get_supplier_payments_history(filter_status="all")
+
+        agent_metrics = {}
+        for agent in agents:
+            agent_metrics[agent['id']] = {
+                'id': agent['id'],
+                'name': agent['name'],
+                'country': agent.get('country', ''),
+                'company_name': agent.get('company_name', ''),
+                'company_address': agent.get('company_address', ''),
+                'currency_code': agent.get('currency_code', ''),
+                'balance': agent.get('balance', 0),
+                'is_active': agent.get('is_active', True),
+                'chiffre_affaire': 0,
+                'shipments': set(),
+                'container_count': 0,
+                'total_payments': 0,
+                'pending_payments': 0,
+            }
+
+        for c in containers:
+            agent_id = c.get('shipping_supplier_id')
+            if agent_id in agent_metrics:
+                agent_metrics[agent_id]['chiffre_affaire'] += c.get('equivalent_expedition', 0)
+                agent_metrics[agent_id]['shipments'].add(c.get('bill_number'))
+                agent_metrics[agent_id]['container_count'] += 1
+                if c.get('taux_expedition', 0) == 0:
+                    agent_metrics[agent_id]['pending_payments'] += c.get('equivalent_expedition', 0)
+
+        for p in payments:
+            supplier_name = p.get('supplier_name', '')
+            for agent_id, metrics in agent_metrics.items():
+                if metrics['name'] == supplier_name:
+                    metrics['total_payments'] += p.get('amount', 0)
+                    break
+
+        self.table.clear_rows()
+        for agent_id, metrics in agent_metrics.items():
+            shipment_count = len(metrics['shipments'])
+            chiffre = metrics['chiffre_affaire']
+            payments_received = metrics['total_payments']
+            pending = metrics['pending_payments']
+            amount_due = chiffre - payments_received
+
+            collection_rate = (payments_received / chiffre * 100) if chiffre > 0 else 0
+
+            self.table.add_row([
+                None,
+                str(agent_id),
+                metrics['name'],
+                metrics['country'],
+                format_amount(chiffre, "DA"),
+                str(shipment_count),
+                str(metrics['container_count']),
+                format_amount(payments_received, "DA"),
+                format_amount(amount_due, "DA"),
+                format_amount(pending, "DA"),
+                format_amount(metrics['balance'], "DA"),
+                f"{collection_rate:.1f}%",
+                metrics['currency_code'],
+                metrics['company_address'],
+            ], is_active=metrics['is_active'])
+
+        self.table.resize_columns_to_contents()
+
+    def _new_agent(self):
+        from modules.currency.views import run_supplier_dialog
+        success, message, supplier_id = run_supplier_dialog(
+            self.currency_service, SUPPLIER_TYPE_SHIPPING, parent=self
+        )
+        if success:
+            self.load_data()
+            self.dataChanged.emit()
+
+    def _edit_agent(self, row_idx):
+        agent_id = int(self.table.get_row_data(row_idx)[1])
+        from modules.currency.views import run_supplier_dialog
+        success, message, _ = run_supplier_dialog(
+            self.currency_service, SUPPLIER_TYPE_SHIPPING, agent_id, parent=self
+        )
+        if success:
+            self.load_data()
+            self.dataChanged.emit()
+
+    def _delete_agent(self, row_idx):
+        agent_id = int(self.table.get_row_data(row_idx)[1])
+        if confirm_action(self, "Confirmer l'archivage", "Voulez-vous vraiment archiver cet agent maritime ?"):
+            success, msg = self.currency_service.delete_supplier(agent_id)
+            if success:
+                show_success(self, "Succès", msg)
+                self.load_data()
+                self.dataChanged.emit()
+            else:
+                show_error(self, "Erreur", msg)
+
+    def _restore_agent(self, row_idx):
+        agent_id = int(self.table.get_row_data(row_idx)[1])
+        if confirm_action(self, "Confirmer la restauration", "Voulez-vous réactiver cet agent maritime ?"):
+            success, msg = self.currency_service.restore_supplier(agent_id)
+            if success:
+                show_success(self, "Succès", msg)
+                self.load_data()
+                self.dataChanged.emit()
+            else:
+                show_error(self, "Erreur", msg)
+
+
+# ============================================================================
+# CONTAINER COSTS TAB
+# ============================================================================
+
+class ContainerCostsTab(QWidget):
+    """Tab 4 — Vue détaillée des coûts directs par conteneur avec revenu et bénéfice."""
+
+    def __init__(self, service: LogisticsService):
+        super().__init__()
+        self.service = service
+        self._setup_ui()
+        self.load_data()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        self.table = EnhancedTableView(table_id="container_costs")
+        self.table.set_headers([
+            "N°", "ID", "Conteneur", "N° BILL", "Facture",
+            "Agent", "Transport/Fret (DA)", "TAXS (DA)", "SURISTARIE (DA)",
+            "Autres Frais (DA)", "Total Coûts (DA)",
+            "Revenu (DA)", "Bénéfice (DA)"
+        ])
+        self.table.refreshClicked.connect(self.load_data)
+        self.table.status_filter.statusChanged.connect(self.load_data)
+        layout.addWidget(self.table)
+
+    def load_data(self):
+        from modules.logistics.expense_service import ExpenseService
+        filter_status = self.table.status_filter.get_filter()
+        self.table.update_actions_for_status(filter_status)
+
+        containers = self.service.get_all_containers(filter_status=filter_status)
+        all_costs  = ExpenseService().get_all_containers_costs()
+
+        self.table.clear_rows()
+        for c in containers:
+            costs    = all_costs.get(c['id'], {})
+            transport = costs.get("Transport / Fret", 0)
+            taxs      = costs.get("TAXS", 0)
+            surest    = costs.get("SURISTARIE", 0)
+            others    = costs.get('_total', 0) - transport - taxs - surest
+            total_c   = costs.get('_total', 0)
+            revenue   = c.get('equivalent_expedition', 0) or 0
+            profit    = revenue - total_c
+
+            self.table.add_row([
+                None,
+                str(c['id']),
+                c['container_number'],
+                c.get('bill_number', ''),
+                c.get('invoice_number', ''),
+                c.get('shipping_supplier_name', ''),
+                format_amount(transport, "DA") if transport else "—",
+                format_amount(taxs,      "DA") if taxs      else "—",
+                format_amount(surest,    "DA") if surest    else "—",
+                format_amount(others,    "DA") if others > 0 else "—",
+                format_amount(total_c,   "DA"),
+                format_amount(revenue,   "DA"),
+                format_amount(profit,    "DA"),
+            ], is_active=c['is_active'])
+
+        self.table.resize_columns_to_contents()
 
 
 # ============================================================================
@@ -303,9 +511,10 @@ class LicensesTab(QWidget):
             # Restant ($)
             restant_usd = global_usd - utilise_usd
             
-            # Commission %
-            commission_pct = lic.get('commission_rate', 0)
-            
+            # Commission % (تحويل من نسبة مئوية إلى عشرية للحساب)
+            commission_pct_rate = lic.get('commission_rate', 0) / 100.0  # [FIX] Convertir 30 → 0.30
+            commission_amount = prix_consomme * commission_pct_rate  # Montant dû au propriétaire
+
             # Mock Financials (Will be replaced by actual logic later)
             total_vers = 0 # Placeholder
             total_du = prix_consomme # Simplified for now (until TAX module is added)
@@ -321,7 +530,7 @@ class LicensesTab(QWidget):
                 format_amount(utilise_usd, "$"),
                 format_amount(restant_usd, "$"),
                 format_amount(prix_consomme, "DA"),
-                f"{commission_pct}%",
+                f"{lic.get('commission_rate', 0)}%",
                 format_amount(total_vers, "DA"),
                 format_amount(total_du, "DA"),
                 format_amount(reste_a_payer, "DA"),
@@ -479,11 +688,12 @@ class ContainersTab(QWidget):
         
         self.table = EnhancedTableView(table_id="logistics_containers")
         self.table.set_headers([
-            "N°", "ID", "Date", "N° BILL", "N° Facture", "Agent", "Licence",
-            "Conteneurs", "Clients", "Total CBM", "Total Cartons",
-            "Montant (USD)", "Taux", "Taux Exp", "Eq. Expedition (DA)", "Port", "Transitaire",
-            "Shipping", "Licence", "Tax", "Pourcentage", "Charge DA", "Charge Port", "Surestarie"
-        ], align_map={2: 'text'}) # Index 2 is Date, force text alignment to prevent summing
+            "N°", "ID", "Date", "N° BILL", "N° Facture", "Agent",
+            "Clients", "Conteneurs", "Total CBM", "Total Cartons",
+            "Montant (USD)", "Taux", "Eq. DZD (DA)", "Taux Exp", "Eq. Expedition (DA)", "Port", "Transitaire",
+            "Shipping (DA)", "TAXS (DA)", "% Commission", "Charge DA", "Charge Port", "Surestarie",
+            "Total Coûts (DA)", "Revenu (DA)", "Bénéfice (DA)"
+        ], align_map={2: 'text'})
         # Temporarily show all columns for review
         # self.table.hide_column(1)
         # self.table.hide_column(6)
@@ -560,6 +770,16 @@ class ContainersTab(QWidget):
 
         containers = self.service.get_all_containers(filter_status=filter_status)
 
+        # Coûts directs par conteneur (une seule requête)
+        from modules.logistics.expense_service import ExpenseService
+        all_costs = ExpenseService().get_all_containers_costs()
+
+        # Charger les données nécessaires une fois
+        all_licenses = {l['id']: l for l in self.service.get_all_licenses(filter_status="all")}
+        all_goods = {}
+        for cid in [c['id'] for c in containers]:
+            all_goods[cid] = self.service.get_container_goods(cid)
+
         bills = {}
         for c in containers:
             bill = c.get('bill_number', 'Sans BILL')
@@ -569,8 +789,9 @@ class ContainersTab(QWidget):
                     'date': c['date_opened'],
                     'bill': bill,
                     'invoice': c.get('invoice_number', ''),
-                    'agent': c.get('supplier_name', ''),
-                    'license': f"#{c.get('license_id', '')}",
+                    'agent': c.get('shipping_supplier_name', ''),
+                    'license_id': c.get('license_id', ''),
+                    'supplier_name': c.get('supplier_name', ''),
                     'containers': [],
                     'container_count': 0,
                     'customer_ids': set(),  # Track unique customer IDs
@@ -583,15 +804,36 @@ class ContainersTab(QWidget):
                     'equivalent_expedition': c.get('equivalent_expedition', 0),
                     'port': c.get('discharge_port', ''),
                     'transitaire': c.get('transitaire', ''),
+                    'commission_rate': 0,
                     'is_active': c['is_active']
                 }
             bills[bill]['containers'].append(c['container_number'])
             bills[bill]['container_count'] += 1
-            if c.get('customer_id'):
-                bills[bill]['customer_ids'].add(c['customer_id'])
+
+            # Count actual customers from goods
+            goods = all_goods.get(c['id'], [])
+            if goods:
+                customer_names = {g['customer_name'] for g in goods if g.get('customer_name')}
+                bills[bill]['customer_ids'].update(customer_names)
+
             bills[bill]['total_cbm'] += c.get('cbm', 0)
             bills[bill]['total_cartons'] += c.get('cartons', 0)
             bills[bill]['total_usd'] += c.get('used_usd_amount', 0)
+
+            # Coûts et revenus
+            costs = all_costs.get(c['id'], {})
+            bills[bill]['total_costs'] = bills[bill].get('total_costs', 0) + costs.get('_total', 0)
+            bills[bill]['tax_amount'] = bills[bill].get('tax_amount', 0) + costs.get('TAXS', 0)
+
+            # Revenu = Eq. Expedition (ce que les clients paient)
+            bills[bill]['total_revenue'] = bills[bill].get('total_revenue', 0) + c.get('equivalent_expedition', 0)
+
+            # Commission rate (from license)
+            if bills[bill]['commission_rate'] == 0:
+                lic = all_licenses.get(c.get('license_id'))
+                if lic:
+                    bills[bill]['commission_rate'] = lic.get('commission_rate', 0)
+
             if not c['is_active']:
                 bills[bill]['is_active'] = False
 
@@ -604,24 +846,26 @@ class ContainersTab(QWidget):
                 b['bill'],
                 b['invoice'],
                 b['agent'],
-                b['license'],
+                str(len(b['customer_ids'])),
                 str(b['container_count']),
-                str(len(b['customer_ids'])),  # Now showing actual count
                 f"{b['total_cbm']:.2f}",
                 str(b['total_cartons']),
                 format_amount(b['total_usd'], "$"),
                 f"{b['taux']:.2f}" if b['taux'] else "",
+                format_amount(b['equivalent_dzd'], "DA") if b['equivalent_dzd'] else "",
                 f"{b['taux_expedition']:.2f}" if b['taux_expedition'] else "",
                 format_amount(b['equivalent_expedition'], "DA") if b['equivalent_expedition'] else "",
                 b['port'],
                 b['transitaire'],
-                "",  # Shipping
-                "",  # Licence
-                "",  # Tax
-                "",  # Pourcentage
+                format_amount(b['equivalent_expedition'], "DA") if b['equivalent_expedition'] else "",  # Shipping
+                format_amount(b.get('tax_amount', 0), "DA"),  # Tax
+                f"{b['commission_rate']:.1f}%" if b['commission_rate'] else "",  # Pourcentage
                 "",  # Charge DA
                 "",  # Charge Port
-                ""   # Surestarie
+                "",  # Surestarie
+                format_amount(b.get('total_costs', 0), "DA"),
+                format_amount(b.get('total_revenue', 0), "DA"),
+                format_amount(b.get('total_revenue', 0) - b.get('total_costs', 0), "DA"),
             ], is_active=b['is_active'])
         self.table.resize_columns_to_contents()
 
@@ -895,95 +1139,6 @@ class OpenBillDialog(QDialog):
                 "transitaire": self.transitaire_input.text().strip(),
                 "notes": self.notes_input.toPlainText().strip()
             }
-
-
-# ============================================================================
-# EXPENSES TAB
-# ============================================================================
-
-class ExpensesTab(QWidget):
-    dataChanged = pyqtSignal()
-    
-    def __init__(self, expense_service, logistics_service, currency_service, 
-                 treasury_service, settings_service: SettingsService, customer_service: CustomerService = None):
-        super().__init__()
-        self.service = expense_service
-        self.logistics_service = logistics_service
-        self.currency_service = currency_service
-        self.treasury_service = treasury_service
-        self.settings_service = settings_service
-        self.customer_service = customer_service
-        self._setup_ui()
-        self.load_data()
-        
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        self.table = EnhancedTableView(table_id="logistics_expenses")
-        self.table.set_headers([
-            "N°", "ID", "Date", "Client", "Type", "Devise", "Montant", "Total (DA)", "Compte", "Référence"
-        ])
-        
-        self.table.addClicked.connect(self.add_expense)
-        self.table.editClicked.connect(self.edit_expense)
-        self.table.deleteClicked.connect(self.delete_expense)
-        self.table.restoreClicked.connect(self.restore_expense)
-        self.table.refreshClicked.connect(self.load_data)
-        self.table.status_filter.statusChanged.connect(self.load_data)
-        
-        layout.addWidget(self.table)
-        
-    def load_data(self):
-        filter_status = self.table.status_filter.get_filter()
-        self.table.update_actions_for_status(filter_status)
-        
-        expenses = self.service.get_all_expenses(filter_status=filter_status)
-        self.table.clear_rows()
-        for e in expenses:
-            self.table.add_row([
-                None,
-                str(e.id),
-                format_date(e.date),
-                e.customer_name,
-                e.type_name,
-                e.currency_code,
-                format_amount(e.amount, e.currency_code),
-                format_amount(e.total_dzd, "DA"),
-                e.account_name,
-                e.reference or ""
-            ], is_active=e.is_active)
-        self.table.resize_columns_to_contents()
-
-    def add_expense(self):
-        dialog = ExpenseDialog(self.service, self.logistics_service, self.currency_service, self.treasury_service, self.customer_service, parent=self)
-        if dialog.exec(): self.load_data()
-
-    def edit_expense(self, row_idx):
-        expense_id = int(self.table.get_row_data(row_idx)[1])
-        e_data = self.service.get_expense(expense_id)
-        if e_data:
-            dialog = ExpenseDialog(self.service, self.logistics_service, self.currency_service, self.treasury_service, self.customer_service, edit_data=e_data, parent=self)
-            if dialog.exec(): self.load_data()
-
-    def delete_expense(self, row_idx):
-        expense_id = int(self.table.get_row_data(row_idx)[1])
-        if confirm_action(self, "Confirmer l'archivage", "Voulez-vous vraiment archiver cette dépense ?"):
-            success, msg = self.service.delete_expense(expense_id)
-            if success:
-                show_success(self, "Succès", msg)
-                self.load_data()
-            else:
-                show_error(self, "Erreur", msg)
-
-    def restore_expense(self, row_idx):
-        expense_id = int(self.table.get_row_data(row_idx)[1])
-        if confirm_action(self, "Confirmer la restauration", "Voulez-vous réactiver cette dépense ?"):
-            success, msg = self.service.restore_expense(expense_id)
-            if success:
-                show_success(self, "Succès", msg)
-                self.load_data()
-            else:
-                show_error(self, "Erreur", msg)
 
 
 # ============================================================================

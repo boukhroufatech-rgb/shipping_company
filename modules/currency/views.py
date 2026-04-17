@@ -43,6 +43,9 @@ SUPPLIER_SCHEMA = [
     {'name': 'contact', 'label': 'Contact', 'type': 'text'},
     {'name': 'phone', 'label': 'Téléphone', 'type': 'text'},
     {'name': 'email', 'label': 'Email', 'type': 'text'},
+    {'name': 'company_name', 'label': 'Nom de la Société', 'type': 'text'},
+    {'name': 'company_address', 'label': 'Adresse Complète', 'type': 'text'},
+    {'name': 'country', 'label': 'Pays', 'type': 'text'},
 ]
 
 # ============================================================================
@@ -506,12 +509,14 @@ class SuppliersTab(QWidget):
         dialog = SmartFormDialog("Modifier Fournisseur" if edit_id else "Nouveau Fournisseur", schema, initial_data, parent=self)
         if dialog.exec():
             results = dialog.get_results()
-            if self.supplier_type_filter and not edit_id:
-                results['supplier_type'] = self.supplier_type_filter
-
             if edit_id:
+                # Preserve supplier_type when editing
+                if 'supplier_type' not in results and initial_data:
+                    results['supplier_type'] = initial_data.get('supplier_type')
                 success, message = self.service.update_supplier(edit_id, **results)
             else:
+                if self.supplier_type_filter:
+                    results['supplier_type'] = self.supplier_type_filter
                 success, message, _ = self.service.create_supplier(**results)
 
             if success:

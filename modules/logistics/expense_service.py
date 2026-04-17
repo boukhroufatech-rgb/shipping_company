@@ -388,6 +388,129 @@ class ExpenseService:
             session.commit()
             return success, "Dépense restaurée" if success else "Échec"
 
+    def record_expense_split_by_license(self, license_id: int, expense_type_id: int,
+                                        total_amount: float, currency_id: int, rate: float = 1.0,
+                                        payment_type: str = "CASH", account_id: int = None,
+                                        supplier_id: int = None, reference: str = "",
+                                        notes: str = "", date: datetime = None) -> Tuple[bool, str, int]:
+        """
+        Enregistre une dépense sur une licence (facture) et la répartit
+        équitablement sur toutes ses conteneurs actifs.
+        Retourne (success, message, nb_containers).
+        """
+        with get_session() as session:
+            try:
+                lic = session.query(ImportLicense).get(license_id)
+                if not lic:
+                    return False, "Licence introuvable", 0
+
+                containers = session.query(ContainerFile).filter_by(
+                    license_id=license_id, is_active=True
+                ).all()
+                if not containers:
+                    return False, "Aucune conteneur actif sur cette licence", 0
+
+                nb = len(containers)
+                amount_per = total_amount / nb
+                total_dzd_per = amount_per * rate
+                total_dzd = total_amount * rate
+
+                # Vérifier solde si CASH
+                if payment_type == PAYMENT_TYPE_CASH:
+                    if not account_id:
+                        return False, "Compte requis pour paiement CASH", 0
+                    from modules.treasury.repository import AccountRepository
+                    acc_repo = AccountRepository()
+                    account = acc_repo.get_by_id(session, account_id)
+                    if not account:
+                        return False, "Compte introuvable", 0
+                    if account.balance < total_dzd:
+                        from modules.settings.service import SettingsService
+                        allow_neg = SettingsService().get_setting("allow_negative_treasury", "False") == "True"
+                        if not allow_neg:
+                            return False, "Solde insuffisant", 0
+                    account.balance -= total_dzd
+                    # Transaction trésorerie globale
+                    trans = Transaction(
+                        account_id=account_id,
+                        type=TRANSACTION_TYPE_DEBIT,
+                        amount=total_dzd,
+                        description=f"Dépense répartie Licence #{license_id} ({nb} conteneurs)",
+                        reference=reference,
+                        date=date or datetime.now()
+                    )
+                    session.add(trans)
+                else:
+                    if not supplier_id:
+                        return False, "Fournisseur requis pour paiement CREDIT", 0
+                    from modules.currency.repository import CurrencySupplierRepository
+                    supp_repo = CurrencySupplierRepository()
+                    supplier = supp_repo.get_by_id(session, supplier_id)
+                    if not supplier:
+                        return False, "Fournisseur introuvable", 0
+                    supplier.balance += total_dzd
+
+                # Créer une dépense par conteneur
+                for container in containers:
+                    exp = Expense(
+                        expense_type_id=expense_type_id,
+                        amount=amount_per,
+                        currency_id=currency_id,
+                        rate=rate,
+                        total_dzd=total_dzd_per,
+                        payment_type=payment_type,
+                        account_id=account_id if payment_type == PAYMENT_TYPE_CASH else None,
+                        supplier_id=supplier_id if payment_type == PAYMENT_TYPE_CREDIT else None,
+                        container_id=container.id,
+                        license_id=license_id,
+                        reference=reference,
+                        notes=f"[Réparti {nb} cont.] {notes}".strip(),
+                        date=date or datetime.now()
+                    )
+                    session.add(exp)
+
+                session.commit()
+                return True, f"Dépense répartie sur {nb} conteneur(s)", nb
+            except Exception as e:
+                session.rollback()
+                return False, f"Erreur: {str(e)}", 0
+
+    def get_container_costs_summary(self, container_id: int) -> dict:
+        """
+        Retourne le résumé des coûts directs d'un conteneur groupés par type.
+        {type_name: total_dzd, ..., '_total': total_dzd}
+        """
+        with get_session() as session:
+            expenses = session.query(Expense).filter_by(
+                container_id=container_id, is_active=True
+            ).all()
+            summary = {}
+            for e in expenses:
+                type_name = e.expense_type.name if e.expense_type else "Autres"
+                summary[type_name] = summary.get(type_name, 0) + (e.total_dzd or 0)
+            summary['_total'] = sum(v for k, v in summary.items() if not k.startswith('_'))
+            return summary
+
+    def get_all_containers_costs(self) -> dict:
+        """
+        Retourne {container_id: costs_summary} pour tous les conteneurs actifs.
+        Utilisé par ContainerCostsTab pour éviter N+1 queries.
+        """
+        with get_session() as session:
+            expenses = session.query(Expense).filter_by(is_active=True).filter(
+                Expense.container_id.isnot(None)
+            ).all()
+            result = {}
+            for e in expenses:
+                cid = e.container_id
+                if cid not in result:
+                    result[cid] = {}
+                type_name = e.expense_type.name if e.expense_type else "Autres"
+                result[cid][type_name] = result[cid].get(type_name, 0) + (e.total_dzd or 0)
+            for cid in result:
+                result[cid]['_total'] = sum(v for k, v in result[cid].items() if not k.startswith('_'))
+            return result
+
     def _to_obj(self, data: dict):
         class DataObj:
             pass

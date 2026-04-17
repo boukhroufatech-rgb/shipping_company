@@ -21,6 +21,7 @@ from utils.constants import (
     SUPPLIER_TYPE_CURRENCY, SUPPLIER_TYPE_LICENSE, SUPPLIER_TYPE_SHIPPING
 )
 from utils.validators import validate_amount, validate_required_field, validate_currency_code
+from utils.logger import log_error
 
 
 class CurrencyService(BaseService):
@@ -184,7 +185,7 @@ class CurrencyService(BaseService):
                 result.sort(key=lambda x: (not x['is_default'], x['code']))
                 return result
         except Exception as e:
-            print(f"ERROR in get_currency_financial_summary: {str(e)}")
+            log_error(e, context="CurrencyService.get_currency_financial_summary")
             return []
 
     def get_supplier_payments_history(self, filter_status: str = "active") -> List[dict]:
@@ -223,7 +224,7 @@ class CurrencyService(BaseService):
                     })
                 return result
         except Exception as e:
-            print(f"ERROR in get_supplier_payments_history: {str(e)}")
+            log_error(e, context="CurrencyService.get_supplier_payments_history")
             return []
 
     def delete_supplier_payment(self, payment_id: int) -> Tuple[bool, str]:
@@ -289,7 +290,7 @@ class CurrencyService(BaseService):
                     "is_active": payment.is_active
                 }
         except Exception as e:
-            print(f"ERROR in get_supplier_payment: {str(e)}")
+            log_error(e, context="CurrencyService.get_supplier_payment")
             return None
 
     def update_supplier_payment(self, payment_id: int, supplier_id: int, account_id: int,
@@ -468,7 +469,7 @@ class CurrencyService(BaseService):
                 result.sort(key=lambda x: (not x['is_active'], x['code']))
                 return result
         except Exception as e:
-            print(f"❌ ERROR in get_world_currency_status: {str(e)}")
+            log_error(e, context="CurrencyService.get_world_currency_status")
             return []
 
     def toggle_world_currency(self, code: str, enable: bool) -> Tuple[bool, str]:
@@ -644,9 +645,10 @@ class CurrencyService(BaseService):
         except Exception as e:
             return False, f"Erreur lors de la création: {str(e)}", None
             
-    def update_supplier(self, supplier_id: int, name: str, supplier_type: str, 
-                        contact: str = "", phone: str = "", email: str = "", 
-                        currency_id: int = None, commercial_register_name: str = "",
+    def update_supplier(self, supplier_id: int, name: str, supplier_type: str,
+                        contact: str = "", phone: str = "", email: str = "",
+                        currency_id: int = None, company_name: str = "", company_address: str = "",
+                        country: str = "", commercial_register_name: str = "",
                         register_number: str = "", nif: str = "", address: str = "",
                         bank: str = "", license_goods_ids: list = None, **kwargs) -> Tuple[bool, str]:
         """Met à jour un fournisseur"""
@@ -655,13 +657,16 @@ class CurrencyService(BaseService):
                 supplier = self.supplier_repo.get_by_id(session, supplier_id)
                 if not supplier:
                     return False, "Fournisseur introuvable"
-                
+
                 supplier.name = name
                 supplier.supplier_type = supplier_type
                 supplier.contact = contact
                 supplier.phone = phone
                 supplier.email = email
                 supplier.currency_id = currency_id
+                supplier.company_name = company_name
+                supplier.company_address = company_address
+                supplier.country = country
                 supplier.commercial_register_name = commercial_register_name
                 supplier.register_number = register_number
                 supplier.nif = nif
@@ -695,6 +700,9 @@ class CurrencyService(BaseService):
                     'balance': s.balance, 'currency_id': s.currency_id, 'is_active': s.is_active,
                     'currency_code': s.currency.code if s.currency else DEFAULT_CURRENCY_CODE,
                     'currency_symbol': s.currency.symbol if s.currency else "DA",
+                    'company_name': s.company_name or "",
+                    'company_address': s.company_address or "",
+                    'country': s.country or "",
                     'commercial_register_name': s.commercial_register_name or "",
                     'register_number': s.register_number or "",
                     'nif': s.nif or "",
@@ -949,7 +957,7 @@ class CurrencyService(BaseService):
                         })
                 return result
         except Exception as e:
-            print(f"ERROR in get_available_lots: {str(e)}")
+            log_error(e, context="CurrencyService.get_available_lots")
             return []
 
     def consume_from_lot(self, purchase_id: int, amount: float) -> Tuple[bool, str]:

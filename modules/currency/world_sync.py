@@ -3,6 +3,7 @@ Service de synchronisation de la bibliothèque mondiale de devises.
 Optimisé pour être ULTRA-LEAN : pas de requêtes lourdes répétitives.
 """
 from typing import List, Dict
+from utils.logger import log_error
 from core.database import get_session
 from core.models import Currency, Transaction, CurrencyPurchase, Account
 from utils.constants import WORLD_CURRENCIES, DEFAULT_CURRENCY_CODE
@@ -78,5 +79,5 @@ class WorldCurrencySyncEngine:
                 return result
 
         except Exception as e:
-            print(f"❌ WorldCurrencySyncEngine Error: {str(e)}")
+            log_error(e, context="WorldCurrencySyncEngine")
             return []
