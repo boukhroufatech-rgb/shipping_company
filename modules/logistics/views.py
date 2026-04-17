@@ -205,23 +205,47 @@ class AgentsMariimesTab(QWidget):
         self.table.resize_columns_to_contents()
 
     def _new_agent(self):
-        from modules.currency.views import run_supplier_dialog
-        success, message, supplier_id = run_supplier_dialog(
-            self.currency_service, SUPPLIER_TYPE_SHIPPING, parent=self
-        )
-        if success:
-            self.load_data()
-            self.dataChanged.emit()
+        self._show_agent_dialog()
 
     def _edit_agent(self, row_idx):
         agent_id = int(self.table.get_row_data(row_idx)[1])
-        from modules.currency.views import run_supplier_dialog
-        success, message, _ = run_supplier_dialog(
-            self.currency_service, SUPPLIER_TYPE_SHIPPING, agent_id, parent=self
+        self._show_agent_dialog(agent_id)
+
+    def _show_agent_dialog(self, edit_id=None):
+        from components.smart_form import SmartFormDialog
+        from modules.currency.views import SUPPLIER_SCHEMA
+
+        schema = [f for f in SUPPLIER_SCHEMA if f['name'] != 'supplier_type']
+
+        initial_data = {}
+        if edit_id:
+            agents = self.currency_service.get_all_suppliers(filter_status="all")
+            agent = next((a for a in agents if a['id'] == edit_id), None)
+            if agent:
+                initial_data = agent
+
+        dialog = SmartFormDialog(
+            "تعديل بيانات الوكيل" if edit_id else "إضافة وكيل جديد",
+            schema,
+            initial_data,
+            parent=self
         )
-        if success:
-            self.load_data()
-            self.dataChanged.emit()
+
+        if dialog.exec():
+            results = dialog.get_results()
+            if edit_id:
+                results['supplier_type'] = SUPPLIER_TYPE_SHIPPING
+                success, message = self.currency_service.update_supplier(edit_id, **results)
+            else:
+                results['supplier_type'] = SUPPLIER_TYPE_SHIPPING
+                success, message, _ = self.currency_service.create_supplier(**results)
+
+            if success:
+                show_success(self, "نجاح", message)
+                self.load_data()
+                self.dataChanged.emit()
+            else:
+                show_error(self, "خطأ", message)
 
     def _delete_agent(self, row_idx):
         agent_id = int(self.table.get_row_data(row_idx)[1])
@@ -393,7 +417,7 @@ class AgentPaymentDialog(QDialog):
 
 
 class AgentPaymentsTab(QWidget):
-    """Tab 2 — Paiements et suivi des montants en attente par agent maritime"""
+    """Tab 2 — جدول موحد للدفعات الفورية والمعلقة"""
     dataChanged = pyqtSignal()
 
     def __init__(self, currency_service: CurrencyService, treasury_service: TreasuryService, service: LogisticsService = None):
@@ -407,69 +431,60 @@ class AgentPaymentsTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        tabs = QTabWidget()
-
-        # Tab 1: Paiements reçus
-        payments_widget = QWidget()
-        payments_layout = QVBoxLayout(payments_widget)
-        self.payments_table = EnhancedTableView(table_id="agent_payments")
-        self.payments_table.set_headers([
-            "N°", "ID", "Date", "Agent", "Montant", "Devise", "Compte", "Référence", "N° Facture"
+        self.table = EnhancedTableView(table_id="agent_payments_unified")
+        self.table.set_headers([
+            "N°", "ID", "التاريخ", "الوكيل", "النوع", "المبلغ", "الحالة",
+            "العملة", "الحساب", "الفاتورة", "المرجع", "الملاحظات"
         ])
-        self.payments_table.addClicked.connect(self._new_payment)
-        self.payments_table.refreshClicked.connect(self.load_data)
-        payments_layout.addWidget(self.payments_table)
 
-        # Tab 2: Montants en attente
-        pending_widget = QWidget()
-        pending_layout = QVBoxLayout(pending_widget)
-        self.pending_table = EnhancedTableView(table_id="pending_payments")
-        self.pending_table.set_headers([
-            "N°", "Agent", "Montant Attente (DA)", "N° Facture(s)", "Taux Manquant", "Statut"
-        ])
-        self.pending_table.refreshClicked.connect(self.load_data)
-        pending_layout.addWidget(self.pending_table)
-
-        tabs.addTab(payments_widget, "Paiements Reçus")
-        tabs.addTab(pending_widget, "Montants en Attente")
-        layout.addWidget(tabs)
+        self.table.addClicked.connect(self._new_payment)
+        self.table.refreshClicked.connect(self.load_data)
+        self.table.status_filter.statusChanged.connect(self.load_data)
+        layout.addWidget(self.table)
 
     def load_data(self):
+        filter_status = self.table.status_filter.get_filter()
+        self.table.update_actions_for_status(filter_status)
+
         agents = self.currency_service.get_all_suppliers(supplier_type=SUPPLIER_TYPE_SHIPPING)
         agent_names = {a['id']: a['name'] for a in agents}
 
         payments = self.currency_service.get_supplier_payments_history()
         containers = self.service.get_all_containers(filter_status="all")
 
-        # Load Payments Received Tab
-        self.payments_table.clear_rows()
+        self.table.clear_rows()
+        row_id = 1
+
+        # 1. عرض الدفعات الفعلية المستلمة (COMPLETED)
         for p in payments:
             if p['id'] and p.get('supplier_name', '') in agent_names.values():
                 bill_number = ""
-                # Try to find related bill
                 for c in containers:
                     if c.get('shipping_supplier_name') == p.get('supplier_name'):
                         bill_number = c.get('bill_number', '')
                         break
 
-                self.payments_table.add_row([
-                    None,
+                self.table.add_row([
+                    str(row_id),
                     str(p['id']),
                     format_date(p['date']),
                     p.get('supplier_name', ''),
+                    "دفعة فورية",
                     format_amount(p['amount'], ''),
+                    "✅ مستلم",
                     p.get('currency_symbol', ''),
                     p.get('account_name', ''),
+                    bill_number,
                     p.get('reference', ''),
-                    bill_number
+                    p.get('notes', '')
                 ])
-        self.payments_table.resize_columns_to_contents()
+                row_id += 1
 
-        # Load Pending Payments Tab
+        # 2. عرض الدفعات المعلقة (PENDING - الإيرادات في انتظار سعر صرف)
         pending_by_agent = {}
         for c in containers:
             agent_name = c.get('shipping_supplier_name', '')
-            if agent_name and c.get('taux_expedition', 0) == 0:
+            if agent_name and c.get('taux_expedition', 0) == 0 and c.get('equivalent_expedition', 0) > 0:
                 if agent_name not in pending_by_agent:
                     pending_by_agent[agent_name] = {
                         'total': 0,
@@ -480,20 +495,25 @@ class AgentPaymentsTab(QWidget):
                 pending_by_agent[agent_name]['bills'].add(c.get('bill_number'))
                 pending_by_agent[agent_name]['container_count'] += 1
 
-        self.pending_table.clear_rows()
-        row_num = 1
         for agent_name, data in sorted(pending_by_agent.items()):
-            bills_str = ", ".join(str(b) for b in sorted(data['bills']))
-            self.pending_table.add_row([
-                str(row_num),
+            bills_str = ", ".join(str(b) for b in sorted(data['bills']) if b)
+            self.table.add_row([
+                str(row_id),
+                "-",
+                "-",
                 agent_name,
+                "دفعة معلقة",
                 format_amount(data['total'], "DA"),
+                "⏳ في الانتظار",
+                "DA",
+                "-",
                 bills_str,
-                f"{data['container_count']} conteneur(s)",
-                "⏳ EN ATTENTE"
+                f"{data['container_count']} حاوية",
+                "في انتظار إدخال سعر الصرف"
             ])
-            row_num += 1
-        self.pending_table.resize_columns_to_contents()
+            row_id += 1
+
+        self.table.resize_columns_to_contents()
 
     def _new_payment(self):
         dialog = AgentPaymentDialog(self.currency_service, self.treasury_service, self)
