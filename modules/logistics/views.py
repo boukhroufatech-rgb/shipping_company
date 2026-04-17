@@ -613,9 +613,11 @@ class AgentPaymentsTab(QWidget):
                 f"{data['container_count']} حاوية",
                 "في انتظار إدخال سعر الصرف"
             ])
-            # حفظ معرفات الحاويات لهذا الصف (نحفظ أول حاوية للوكيل)
+            # حفظ معرفات الحاويات لهذا الصف
+            # رقم الصف الحقيقي = عدد الدفعات الفورية + عدد الدفعات المعلقة السابقة
+            current_row_idx = self.table.model.rowCount() - 1
             if data['container_ids']:
-                self.pending_containers[row_id - 1] = data['container_ids']
+                self.pending_containers[current_row_idx] = data['container_ids']
             row_id += 1
 
         self.table.resize_columns_to_contents()
@@ -628,8 +630,12 @@ class AgentPaymentsTab(QWidget):
             container_ids = self.pending_containers[row_idx]
             self._open_exchange_rate_dialog(container_ids)
         else:
-            # دفعة فورية - فتح نافذة التعديل (هنا يمكن تطبيق تعديل الدفعة)
-            show_info(self, "معلومة", "يمكنك تعديل بيانات الشحنة من تبويب الفواتير")
+            # دفعة فورية - عرض معلومة
+            QMessageBox.information(
+                self,
+                "معلومة",
+                "يمكنك تعديل بيانات الشحنة من تبويب الفواتير"
+            )
 
     def _open_exchange_rate_dialog(self, container_ids):
         """فتح نافذة إدخال سعر الصرف للدفعات المعلقة"""
