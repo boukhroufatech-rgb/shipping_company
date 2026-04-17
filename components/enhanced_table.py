@@ -24,6 +24,10 @@ from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QColo
 
 from .status_filter import StatusFilter
 from .export_dialog import ExportPreviewDialog
+from .column_definitions import (
+    get_column_schema, get_headers_from_schema, get_align_map_from_schema,
+    get_summable_columns, get_hidden_columns
+)
 from utils.icon_manager import IconManager
 from core.themes import THEMES
 from modules.settings.service import SettingsService
@@ -487,10 +491,31 @@ class EnhancedTableView(QWidget):
         if self.edit_action.isEnabled():
             self.editClicked.emit(index.row())
 
+    def set_headers_from_schema(self, table_id: str):
+        """
+        تعيين الأعمدة من التعريف المركزي
+
+        Args:
+            table_id: معرف الجدول (مثل 'agents_maritimes', 'agent_payments', إلخ)
+        """
+        schema = get_column_schema(table_id)
+        if not schema:
+            raise ValueError(f"لم يتم العثور على تعريف للجدول: {table_id}")
+
+        headers = get_headers_from_schema(schema)
+        align_map = get_align_map_from_schema(schema)
+        self._summable_columns = get_summable_columns(schema)
+
+        self.set_headers(headers, align_map)
+
+        # إخفاء الأعمدة المخفية
+        for col_idx in get_hidden_columns(schema):
+            self.hide_column(col_idx)
+
     def set_headers(self, headers: list, align_map: dict = None):
         """
         Configure les en-têtes avec alignement personnalisé.
-        
+
         Args:
             headers: Liste des noms des colonnes
             align_map: Dict {index: 'left'|'center'|'right'|'amount'} pour spécifier l'alignement

@@ -117,13 +117,7 @@ class AgentsMariimesTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.table = EnhancedTableView(table_id="agents_maritimes")
-        self.table.set_headers([
-            "N°", "ID", "Agent", "Pays",
-            "CHIFFRE D'AFFAIRE (DA)", "N° Factures", "N° Conteneurs",
-            "Paiements Reçus (DA)", "Montant Dû (DA)", "Paiements Attente (DA)",
-            "Solde (DA)", "Taux de Recouvrement (%)",
-            "Devise", "Adresse Société"
-        ])
+        self.table.set_headers_from_schema("agents_maritimes")
 
         self.table.addClicked.connect(self._new_agent)
         self.table.editClicked.connect(self._edit_agent)
@@ -526,11 +520,8 @@ class AgentPaymentsTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        self.table = EnhancedTableView(table_id="agent_payments_unified")
-        self.table.set_headers([
-            "N°", "ID", "التاريخ", "الوكيل", "النوع", "المبلغ", "الحالة",
-            "العملة", "الحساب", "الفاتورة", "المرجع", "الملاحظات"
-        ])
+        self.table = EnhancedTableView(table_id="agent_payments")
+        self.table.set_headers_from_schema("agent_payments")
 
         self.table.addClicked.connect(self._new_payment)
         self.table.editClicked.connect(self._on_row_edit)
@@ -895,15 +886,9 @@ class ContainersTab(QWidget):
         
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        
-        self.table = EnhancedTableView(table_id="logistics_containers")
-        self.table.set_headers([
-            "N°", "ID", "Date", "N° BILL", "N° Facture", "Agent",
-            "Clients", "Conteneurs", "Total CBM", "Total Cartons",
-            "Montant (USD)", "Taux", "Eq. DZD (DA)", "Taux Exp", "Eq. Expedition (DA)", "Port", "Transitaire",
-            "Shipping (DA)", "TAXS (DA)", "% Commission", "Charge DA", "Charge Port", "Surestarie",
-            "Total Coûts (DA)", "Revenu (DA)", "Bénéfice (DA)"
-        ], align_map={2: 'text'})
+
+        self.table = EnhancedTableView(table_id="containers")
+        self.table.set_headers_from_schema("containers")
         # Temporarily show all columns for review
         # self.table.hide_column(1)
         # self.table.hide_column(6)
