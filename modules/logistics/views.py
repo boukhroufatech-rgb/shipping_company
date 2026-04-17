@@ -335,6 +335,100 @@ class ContainerCostsTab(QWidget):
 
 
 # ============================================================================
+# EXCHANGE RATE DIALOG (لإدخال سعر الصرف للدفعات المعلقة)
+# ============================================================================
+
+class ExchangeRateDialog(QDialog):
+    """نافذة صغيرة لإدخال سعر الصرف للدفعات المعلقة"""
+
+    def __init__(self, service: LogisticsService, container_ids: list, parent=None):
+        super().__init__(parent)
+        self.service = service
+        self.container_ids = container_ids
+        self.containers = []
+        self.setWindowTitle("تحديث سعر الصرف - الدفعات المعلقة")
+        self.setMinimumWidth(500)
+        self.setMaximumWidth(600)
+
+        # تحميل بيانات الحاويات
+        all_containers = service.get_all_containers(filter_status="all")
+        self.containers = [c for c in all_containers if c['id'] in container_ids]
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # عنوان
+        title = QLabel("تحديث سعر الصرف للدفعات المعلقة")
+        title_font = title.font()
+        title_font.setPointSize(11)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        # عرض معلومات الحاويات
+        info_text = "الحاويات المعلقة:\n"
+        total_usd = 0
+        for c in self.containers:
+            info_text += f"• الفاتورة: {c.get('bill_number', 'N/A')} - المبلغ: {c.get('used_usd_amount', 0)}$\n"
+            total_usd += c.get('used_usd_amount', 0)
+
+        info_label = QLabel(info_text)
+        info_label.setStyleSheet("background-color: #f0f0f0; padding: 10px; border-radius: 4px;")
+        layout.addWidget(info_label)
+
+        # نموذج إدخال سعر الصرف
+        form = QFormLayout()
+
+        self.exchange_rate_input = QDoubleSpinBox()
+        self.exchange_rate_input.setMinimum(0)
+        self.exchange_rate_input.setMaximum(999999)
+        self.exchange_rate_input.setDecimals(2)
+        self.exchange_rate_input.setStyleSheet("padding: 5px;")
+        self.exchange_rate_input.valueChanged.connect(self._on_rate_changed)
+        form.addRow("سعر الصرف (DA/$):", self.exchange_rate_input)
+
+        # عرض المعادل
+        self.equivalent_label = QLabel("0 DA")
+        self.equivalent_label.setStyleSheet("color: #238636; font-weight: bold; font-size: 12px;")
+        form.addRow("المعادل (DA):", self.equivalent_label)
+
+        layout.addLayout(form)
+
+        # أزرار
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_rate_changed(self):
+        """حساب المعادل عند تغيير سعر الصرف"""
+        rate = self.exchange_rate_input.value()
+        total_usd = sum(c.get('used_usd_amount', 0) for c in self.containers)
+        equivalent = total_usd * rate
+        self.equivalent_label.setText(f"{equivalent:,.2f} DA")
+
+    def _on_save(self):
+        """حفظ سعر الصرف الجديد"""
+        rate = self.exchange_rate_input.value()
+
+        if rate <= 0:
+            return show_error(self, "خطأ", "يجب إدخال سعر صرف صحيح")
+
+        # تحديث جميع الحاويات بسعر الصرف الجديد
+        for c in self.containers:
+            success, msg = self.service.update_container_exchange_rate(c['id'], rate)
+            if not success:
+                return show_error(self, "خطأ", f"فشل تحديث الحاوية: {msg}")
+
+        show_success(self, "نجاح", f"تم تحديث سعر الصرف لـ {len(self.containers)} حاوية")
+        self.accept()
+
+
+# ============================================================================
 # AGENT PAYMENTS TAB
 # ============================================================================
 
@@ -425,6 +519,7 @@ class AgentPaymentsTab(QWidget):
         self.currency_service = currency_service
         self.treasury_service = treasury_service
         self.service = service or LogisticsService()
+        self.pending_containers = {}  # {row_index: container_id} لتخزين معرفات الحاويات المعلقة
         self._setup_ui()
         self.load_data()
 
@@ -438,6 +533,7 @@ class AgentPaymentsTab(QWidget):
         ])
 
         self.table.addClicked.connect(self._new_payment)
+        self.table.editClicked.connect(self._on_row_edit)
         self.table.refreshClicked.connect(self.load_data)
         self.table.status_filter.statusChanged.connect(self.load_data)
         layout.addWidget(self.table)
@@ -453,6 +549,7 @@ class AgentPaymentsTab(QWidget):
         containers = self.service.get_all_containers(filter_status="all")
 
         self.table.clear_rows()
+        self.pending_containers.clear()
         row_id = 1
 
         # 1. عرض الدفعات الفعلية المستلمة (COMPLETED)
@@ -482,17 +579,22 @@ class AgentPaymentsTab(QWidget):
 
         # 2. عرض الدفعات المعلقة (PENDING - الإيرادات في انتظار سعر صرف)
         pending_by_agent = {}
+        pending_containers_list = []
+
         for c in containers:
             agent_name = c.get('shipping_supplier_name', '')
             if agent_name and c.get('taux_expedition', 0) == 0 and c.get('equivalent_expedition', 0) > 0:
+                pending_containers_list.append(c)
                 if agent_name not in pending_by_agent:
                     pending_by_agent[agent_name] = {
                         'total': 0,
                         'bills': set(),
+                        'container_ids': [],
                         'container_count': 0
                     }
                 pending_by_agent[agent_name]['total'] += c.get('equivalent_expedition', 0)
                 pending_by_agent[agent_name]['bills'].add(c.get('bill_number'))
+                pending_by_agent[agent_name]['container_ids'].append(c.get('id'))
                 pending_by_agent[agent_name]['container_count'] += 1
 
         for agent_name, data in sorted(pending_by_agent.items()):
@@ -511,9 +613,33 @@ class AgentPaymentsTab(QWidget):
                 f"{data['container_count']} حاوية",
                 "في انتظار إدخال سعر الصرف"
             ])
+            # حفظ معرفات الحاويات لهذا الصف (نحفظ أول حاوية للوكيل)
+            if data['container_ids']:
+                self.pending_containers[row_id - 1] = data['container_ids']
             row_id += 1
 
         self.table.resize_columns_to_contents()
+
+    def _on_row_edit(self, row_idx):
+        """معالج النقر المزدوج - يميز بين الدفعات الفورية والمعلقة"""
+        # التحقق إذا كان هذا صف دفعة معلقة
+        if row_idx in self.pending_containers:
+            # دفعة معلقة - فتح نافذة إدخال سعر الصرف
+            container_ids = self.pending_containers[row_idx]
+            self._open_exchange_rate_dialog(container_ids)
+        else:
+            # دفعة فورية - فتح نافذة التعديل (هنا يمكن تطبيق تعديل الدفعة)
+            show_info(self, "معلومة", "يمكنك تعديل بيانات الشحنة من تبويب الفواتير")
+
+    def _open_exchange_rate_dialog(self, container_ids):
+        """فتح نافذة إدخال سعر الصرف للدفعات المعلقة"""
+        if not container_ids:
+            return show_error(self, "خطأ", "لم يتم العثور على الحاويات")
+
+        dialog = ExchangeRateDialog(self.service, container_ids, parent=self)
+        if dialog.exec():
+            self.load_data()
+            self.dataChanged.emit()
 
     def _new_payment(self):
         dialog = AgentPaymentDialog(self.currency_service, self.treasury_service, self)

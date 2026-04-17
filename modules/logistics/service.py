@@ -284,23 +284,44 @@ class LogisticsService:
                 container = self.container_repo.get_by_id(session, container_id)
                 if not container:
                     return False, "Dossier non trouvé"
-                
+
                 container.customs_value_dzd = customs_value
                 # Commission = Customs Value * Commission Rate / 100
                 old_commission = container.commission_dzd
                 new_commission = (customs_value * container.license.commission_rate) / 100
                 container.commission_dzd = new_commission
-                
+
                 # Ajouter la différence de commission à la dette du fournisseur de licence
                 commission_diff = new_commission - old_commission
                 if commission_diff != 0:
                     container.license.supplier.balance += commission_diff
-                
+
                 session.commit()
                 return True, f"Données jumerka mises à jour (Commission: {new_commission:,.2f} DA)"
             except Exception as e:
                 session.rollback()
                 return False, str(e)
+
+    def update_container_exchange_rate(self, container_id: int, taux_expedition: float) -> Tuple[bool, str]:
+        """تحديث سعر الصرف للحاوية وحساب الإيرادات الجديدة"""
+        with get_session() as session:
+            try:
+                container = self.container_repo.get_by_id(session, container_id)
+                if not container:
+                    return False, "الحاوية غير موجودة"
+
+                # حفظ القيم القديمة
+                old_equivalent = container.equivalent_expedition or 0
+
+                # تحديث سعر الصرف وحساب الإيرادات الجديدة
+                container.taux_expedition = taux_expedition
+                container.equivalent_expedition = (container.used_usd_amount or 0) * taux_expedition
+
+                session.commit()
+                return True, f"تم تحديث سعر الصرف: {taux_expedition:.2f} DA/$"
+            except Exception as e:
+                session.rollback()
+                return False, f"خطأ: {str(e)}"
 
     def get_all_containers(self, filter_status: str = "active") -> List[dict]:
         """Récupère tous les dossiers conteneurs selon le statut (active, inactive, all)"""
