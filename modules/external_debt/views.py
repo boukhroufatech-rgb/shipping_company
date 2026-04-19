@@ -427,10 +427,7 @@ class DebtJournalTab(QWidget):
 
         # Table du journal (Pattern N°/ID) - [NEW] 2026-04-05: Colonnes détaillées
         self.table = EnhancedTableView(table_id="external_journal")
-        self.table.set_headers([
-            "N°", "ID", "Date", "Contact", "Type",
-            "Montant", "Devise", "Taux", "Montant (DA)", "Compte", "Notes"
-        ])
+        self.table.set_headers_from_schema("external_journal")  # [GOLDEN PRINCIPLE] schema centralisé
 
         # Actions Standard
         self.table.editClicked.connect(self.edit_operation)
@@ -452,17 +449,18 @@ class DebtJournalTab(QWidget):
             # [FIX] 2026-04-05 - Handle None values for old records
             exchange_rate = h.get('exchange_rate') or 1.0
             amount_da = h.get('amount_da') or h.get('amount', 0)
-            
+
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values, not formatted strings
             self.table.add_row([
                 None,
                 str(h['id']),
-                format_date(h['date']),
+                h['date'] if isinstance(h['date'], str) else h['date'].isoformat(),  # Raw ISO date
                 h['contact_name'],
                 h['type_display'],
-                f"{h['amount']:,.2f}",
+                h['amount'],  # raw float
                 h.get('currency_code', 'DA'),
-                f"{exchange_rate:.2f}",
-                f"{amount_da:,.2f} DA",
+                exchange_rate,  # raw float
+                amount_da,  # raw float
                 h['account_name'],
                 h['notes'] or ""
             ], is_active=h['is_active'])
@@ -926,10 +924,7 @@ class HistoryDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="external_history")
-        self.table.set_headers([
-            "N°", "ID", "Date", "Type",
-            "Montant", "Devise", "Taux", "Montant (DA)", "Compte", "Notes"
-        ])
+        self.table.set_headers_from_schema("external_history")  # [GOLDEN PRINCIPLE] schema centralisé
 
         self.table.editClicked.connect(self.edit_operation)
         self.table.deleteClicked.connect(self.delete_operation)
@@ -949,16 +944,17 @@ class HistoryDialog(QDialog):
             # [FIX] 2026-04-05 - Handle None values for old records
             exchange_rate = h.get('exchange_rate') or 1.0
             amount_da = h.get('amount_da') or h.get('amount', 0)
-            
+
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values, not formatted strings
             self.table.add_row([
                 None,
                 str(h['id']),
-                format_date(h['date']),
+                h['date'] if isinstance(h['date'], str) else h['date'].isoformat(),  # Raw ISO date
                 h['type_display'],
-                f"{h['amount']:,.2f}",
+                h['amount'],  # raw float
                 h.get('currency_code', 'DA'),
-                f"{exchange_rate:.2f}",
-                f"{amount_da:,.2f} DA",
+                exchange_rate,  # raw float
+                amount_da,  # raw float
                 h['account_name'],
                 h['notes'] or ""
             ], is_active=h['is_active'])

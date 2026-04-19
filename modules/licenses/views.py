@@ -159,7 +159,7 @@ class LicenseAccountsTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.table = EnhancedTableView(table_id="license_bank_accounts")
-        self.table.set_headers(["N°", "ID", "Propriétaire (RC)", "N° Registre", "Banque", "Solde (DA)"])
+        self.table.set_headers_from_schema("license_bank_accounts")  # [GOLDEN PRINCIPLE]
         self.table.refreshClicked.connect(self.load_data)
         layout.addWidget(self.table)
         
@@ -176,13 +176,14 @@ class LicenseAccountsTab(QWidget):
                 register = s.get('register_number', '')
                 bank = s.get('bank', '')
 
+                # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
                 self.table.add_row([
                     None,
                     str(s['id']),
                     owner_name,
                     register,
                     bank,
-                    format_amount(bal, "DA")
+                    bal  # raw float
                 ])
         self.table.resize_columns_to_contents()
 
@@ -202,7 +203,7 @@ class LicenseTransfersTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.table = EnhancedTableView(table_id="license_bank_transfers")
-        self.table.set_headers(["N°", "ID", "Date", "Montant (DA)", "De (Caisse)", "Vers (Banque)", "Note"])
+        self.table.set_headers_from_schema("license_bank_transfers")  # [GOLDEN PRINCIPLE]
         
         # Action dans la table "Même ligne que les autres boutons"
         self.table.add_action_button("+ Nouveau Transfert", "🔄", self._add_transfer)
@@ -236,11 +237,12 @@ class LicenseTransfersTab(QWidget):
                 )
                 source_name = account_names.get(debit_trans['account_id'], "Trésorerie") if debit_trans else "Trésorerie"
 
+                # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
                 self.table.add_row([
                     None,
                     str(t['id']),
-                    format_date(t['date']),
-                    format_amount(t['amount'], "DA"),
+                    t['date'] if isinstance(t['date'], str) else t['date'].isoformat(),  # Raw ISO date
+                    t['amount'],  # raw float
                     source_name,
                     dest_name,
                     t['description']
