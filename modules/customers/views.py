@@ -90,7 +90,7 @@ class CustomerListTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="customer_list")
-        self.table.set_headers(["N°", "ID", "Nom du Client", "Téléphone", "Adresse", "Solde Initial", "N° Affaires", "Frais", "Réductions", "Paiements", "Dette Externe", "Solde Actuel", "Notes"])
+        self.table.set_headers_from_schema("customer_list")  # [GOLDEN PRINCIPLE] schema centralisé
         
         self.table.addClicked.connect(self.add_customer)
         self.table.editClicked.connect(self.edit_customer)
@@ -239,13 +239,13 @@ class CustomerListTab(QWidget):
     def load_data(self):
         filter_status = self.table.status_filter.get_filter()
         self.table.update_actions_for_status(filter_status)
-        
+
         customers = self.service.get_all_customers(filter_status=filter_status)
         self.table.clear_rows()
         for i, c in enumerate(customers, 1):
             cid = c['id']
             initial_balance = c.get('initial_balance', 0)
-            
+
             # Calculate all values
             total_business = self.service.get_customer_total_business(cid)
             total_costs = self.service.get_customer_total_costs(cid)
@@ -253,16 +253,13 @@ class CustomerListTab(QWidget):
             total_payments = self.service.get_customer_total_payments(cid)
             dette_externe = 0
             current_balance = self.service.get_customer_balance(cid)
-            
-            # Format numbers
-            def fmt(val):
-                return f"{val:,.2f}" if val else "0.00"
-            
+
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw floats, not formatted strings
             self.table.add_row([
-                str(i), str(cid), c["name"], c["phone"] or "", 
-                c["address"] or "", fmt(initial_balance),
-                fmt(total_business), fmt(total_costs), fmt(total_discounts),
-                fmt(total_payments), fmt(dette_externe), fmt(current_balance),
+                str(i), str(cid), c["name"], c["phone"] or "",
+                c["address"] or "", initial_balance,
+                total_business, total_costs, total_discounts,
+                total_payments, dette_externe, current_balance,
                 c["notes"] or ""
             ], is_active=c['is_active'])
         self.table.resize_columns_to_contents()
@@ -312,7 +309,7 @@ class CustomerGoodsTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="customer_goods")
-        self.table.set_headers(["N°", "ID", "Date", "Client", "Conteneur", "Type", "Cartons", "CBM", "P.U (DA)", "Total (DA)"])
+        self.table.set_headers_from_schema("customer_goods")  # [GOLDEN PRINCIPLE] schema centralisé
         self.table.addClicked.connect(self.add_goods)
         self.table.editClicked.connect(self.edit_goods)
         self.table.deleteClicked.connect(self.delete_goods)
@@ -323,17 +320,18 @@ class CustomerGoodsTab(QWidget):
         goods = self.service.get_all_goods()
         self.table.clear_rows()
         for g in goods:
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values, not formatted strings
             self.table.add_row([
-                None, 
-                str(g["id"]), 
-                format_date(g["date"]), 
-                g["customer_name"], 
-                g["container_number"] or "N/A", 
-                g["goods_type"], 
-                str(g["cartons"]), 
-                f"{g['cbm']:.2f}", 
-                format_amount(g["cbm_price_dzd"], "DA"), 
-                format_amount(g["total_net"], "DA")
+                None,
+                str(g["id"]),
+                g["date"],  # ISO date string
+                g["customer_name"],
+                g["container_number"] or "N/A",
+                g["goods_type"],
+                g["cartons"],  # raw number
+                g["cbm"],  # raw float
+                g["cbm_price_dzd"],  # raw float
+                g["total_net"]  # raw float
             ])
         self.table.resize_columns_to_contents()
 
@@ -403,7 +401,7 @@ class CustomerPaymentsTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="customer_payments")
-        self.table.set_headers(["N°", "ID", "Date", "Client", "Compte", "Montant (DA)", "Réf", "Notes"])
+        self.table.set_headers_from_schema("customer_payments")  # [GOLDEN PRINCIPLE] schema centralisé
         self.table.addClicked.connect(self.receive_payment)
         self.table.refreshClicked.connect(self.load_data)
         layout.addWidget(self.table)
@@ -412,14 +410,15 @@ class CustomerPaymentsTab(QWidget):
         payments = self.service.get_all_payments()
         self.table.clear_rows()
         for p in payments:
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values, not formatted strings
             row_idx = self.table.add_row([
-                None, 
-                str(p["id"]), 
-                format_date(p["date"]), 
+                None,
+                str(p["id"]),
+                p["date"],  # ISO date string
                 p["customer_name"],
-                p["account_name"] or "N/A", 
-                format_amount(p["amount"], "DA"), 
-                p["reference"] or "", 
+                p["account_name"] or "N/A",
+                p["amount"],  # raw float
+                p["reference"] or "",
                 p["notes"] or ""
             ])
             # [CUSTOM] Couleur personnalisée pour l'historique des paiements clients
@@ -675,7 +674,7 @@ class CustomerCostsTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="customer_costs")
-        self.table.set_headers(["N°", "ID", "Date", "Client", "Type Frais", "Montant (DA)", "Notes"])
+        self.table.set_headers_from_schema("customer_costs")  # [GOLDEN PRINCIPLE] schema centralisé
         self.table.addClicked.connect(self.add_cost)
         self.table.editClicked.connect(self.edit_cost)
         self.table.deleteClicked.connect(self.delete_cost)
@@ -686,13 +685,14 @@ class CustomerCostsTab(QWidget):
         costs = self.service.get_all_side_costs()
         self.table.clear_rows()
         for c in costs:
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values, not formatted strings
             self.table.add_row([
-                None, 
-                str(c["id"]), 
-                format_date(c["date"]), 
+                None,
+                str(c["id"]),
+                c["date"],  # ISO date string
                 c["customer_name"],
-                c["cost_type_name"] or "N/A", 
-                format_amount(c["amount"], "DA"), 
+                c["cost_type_name"] or "N/A",
+                c["amount"],  # raw float
                 c["notes"] or ""
             ])
         self.table.resize_columns_to_contents()
@@ -781,7 +781,7 @@ class CustomerLedgerTab(QWidget):
         self.combo_customer.currentIndexChanged.connect(self.load_data); hbox.addWidget(self.combo_customer); hbox.addStretch()
         layout.addLayout(hbox)
         self.table = EnhancedTableView(table_id="customer_ledger")
-        self.table.set_headers(["N°", "ID", "Date", "Opération", "Détails", "Débit (DA)", "Crédit (DA)", "Solde (DA)"])
+        self.table.set_headers_from_schema("customer_ledger")  # [GOLDEN PRINCIPLE] schema centralisé
         layout.addWidget(self.table)
         self.refresh_customers()
 
@@ -797,15 +797,16 @@ class CustomerLedgerTab(QWidget):
         self.table.clear_rows()
         for item in ledger:
             is_payment = item["type"] == "PAIEMENT"
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values, not formatted strings
             row_idx = self.table.add_row([
-                None, 
-                str(item["id"]), 
-                format_date(item["date"]), 
+                None,
+                str(item["id"]),
+                item["date"],  # ISO date string
                 item["type"],
-                item["desc"], 
-                format_amount(item["debit"], "DA"), 
-                format_amount(item["credit"], "DA"), 
-                format_amount(item["balance"], "DA")
+                item["desc"],
+                item["debit"],  # raw float
+                item["credit"],  # raw float
+                item["balance"]  # raw float
             ])
             # [CUSTOM] Coloration du relevé de compte client
             # [WHY]: Distinction visuelle: Paiements (Vert #072b25) / Factures (Rouge #2b0707)
