@@ -45,10 +45,7 @@ class PartnersView(QWidget):
         
         # Table (N°/ID Pattern)
         self.table = EnhancedTableView(self, "partners_table")
-        self.table.set_headers([
-            "N°", "ID", "Nom Prénom", "N° Téléphone", "E-Mail", "Fonction",
-            "M. Contributions", "% Contrib.", "M. Profit", "M. Surchats", "Reste", "Statut"
-        ])
+        self.table.set_headers_from_schema("partners_table")  # [GOLDEN PRINCIPLE]
 
         # Actions Standard
         self.table.addClicked.connect(self._add_partner)
@@ -73,6 +70,7 @@ class PartnersView(QWidget):
         data = self.service.get_partners_table_data(filter_status=filter_status)
         self.table.clear_rows()
         for d in data:
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
             self.table.add_row([
                 None,
                 str(d['id']),
@@ -80,11 +78,11 @@ class PartnersView(QWidget):
                 d['phone'] or "",
                 d['email'] or "",
                 d['function'] or "",
-                format_amount(d['total_contributions'], "DA"),
-                f"{d['percentage']:.2f} %",
-                format_amount(d['net_profit'], "DA"),
-                format_amount(d['total_withdrawals'], "DA"),
-                format_amount(d['remaining'], "DA"),
+                d['total_contributions'],  # raw float
+                d['percentage'],  # raw float
+                d['net_profit'],  # raw float
+                d['total_withdrawals'],  # raw float
+                d['remaining'],  # raw float
                 d['status']
             ], is_active=d['is_active'])
         self.table.resize_columns_to_contents()
@@ -344,8 +342,8 @@ class PartnerHistoryDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         
-        self.table = EnhancedTableView(self, f"partner_history_{self.partner_id}")
-        self.table.set_headers(["N°", "Date", "Type", "Montant", "Réf", "Trésorerie", "Notes"])
+        self.table = EnhancedTableView(self, "partner_history")
+        self.table.set_headers_from_schema("partner_history")  # [GOLDEN PRINCIPLE]
         
         self.table.editClicked.connect(self._edit_transaction)
         self.table.deleteClicked.connect(self._delete_transaction)
@@ -383,12 +381,13 @@ class PartnerHistoryDialog(QDialog):
             }
             treasury_info = t["treasury_account"] if t["treasury_reference"] else "Non (Ajustement)"
             
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
             self.table.add_row([
                 None,
                 str(t["id"]),
-                t["date"].strftime("%d/%m/%Y"),
+                t["date"] if isinstance(t["date"], str) else t["date"].isoformat(),  # Raw ISO date
                 type_map.get(t["type"], t["type"]),
-                format_amount(t["amount"], "DA"),
+                t["amount"],  # raw float
                 t["treasury_reference"] or "-",
                 treasury_info,
                 t["notes"] or ""

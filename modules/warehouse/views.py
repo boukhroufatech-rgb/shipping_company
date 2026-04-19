@@ -70,7 +70,7 @@ class WarehousesListTab(QWidget):
         
         # Table - EnhancedTableView has built-in action buttons
         self.table = EnhancedTableView(table_id="warehouses")
-        self.table.set_headers(["N°", "ID", "Nom", "Adresse", "Principal", "Notes"])
+        self.table.set_headers_from_schema("warehouses")  # [GOLDEN PRINCIPLE]
         
         # Connect EnhancedTableView actions
         self.table.addClicked.connect(self.add_warehouse)
@@ -174,7 +174,7 @@ class StocksTab(QWidget):
         
         # Table
         self.table = EnhancedTableView(table_id="warehouse_stocks")
-        self.table.set_headers(["N°", "ID", "Client", "Conteneur", "Type Marchandise", "Quantité", "Poids (kg)", "Notes"])
+        self.table.set_headers_from_schema("warehouse_stocks")  # [GOLDEN PRINCIPLE]
         self.selected_stock_id = None
         self.table.editClicked.connect(lambda idx: self._set_selected(idx))
         layout.addWidget(self.table)
@@ -200,10 +200,13 @@ class StocksTab(QWidget):
         stocks = self.service.get_warehouse_stocks(wid)
         self.table.clear_rows()
         for i, s in enumerate(stocks, 1):
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
             self.table.add_row([
-                str(i), str(s['id']), s['customer_name'], 
+                str(i), str(s['id']), s['customer_name'],
                 str(s['container_id'] or ""), s['goods_type'],
-                str(s['quantity']), f"{s['weight']:.2f}", s['notes'] or ""
+                s['quantity'],  # raw number
+                s['weight'],  # raw float
+                s['notes'] or ""
             ])
         self.table.resize_columns_to_contents()
         self.selected_stock_id = None
@@ -305,7 +308,7 @@ class MovementsTab(QWidget):
         
         # Table
         self.table = EnhancedTableView(table_id="warehouse_movements")
-        self.table.set_headers(["N°", "ID", "Date", "Type", "Client", "Quantité", "Notes"])
+        self.table.set_headers_from_schema("warehouse_movements")  # [GOLDEN PRINCIPLE]
         layout.addWidget(self.table)
         
         self.refresh_warehouses()
@@ -327,8 +330,10 @@ class MovementsTab(QWidget):
         self.table.clear_rows()
         for i, m in enumerate(movements, 1):
             type_str = "استلام" if m['movement_type'] == "RECEIVE" else "تسليم"
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
             self.table.add_row([
-                str(i), str(m['id']), format_date(m['date']),
-                type_str, m['customer_name'], str(m['quantity']), m['notes'] or ""
+                str(i), str(m['id']), m['date'] if isinstance(m['date'], str) else m['date'].isoformat(),  # Raw ISO date
+                type_str, m['customer_name'], m['quantity'],  # raw number
+                m['notes'] or ""
             ])
         self.table.resize_columns_to_contents()
