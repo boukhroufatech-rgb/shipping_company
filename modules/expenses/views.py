@@ -46,11 +46,7 @@ class ExpensesView(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="expenses_main")
-        self.table.set_headers([
-            "N°", "ID", "Date", "Catégorie", "Type de frais",
-            "Lié à", "Devise", "Montant", "Total (DA)",
-            "Compte / Fournisseur", "Paiement", "Référence"
-        ])
+        self.table.set_headers_from_schema("expenses_main")  # [GOLDEN PRINCIPLE]
         self.table.addClicked.connect(self.add_expense)
         self.table.editClicked.connect(self.edit_expense)
         self.table.deleteClicked.connect(self.delete_expense)
@@ -76,13 +72,13 @@ class ExpensesView(QWidget):
             self.table.add_row([
                 None,
                 str(e.id),
-                format_date(e.date),
+                e.date,               # [GOLDEN PRINCIPLE] raw date
                 categorie,
                 e.type_name,
                 linked,
                 e.currency_code,
-                format_amount(e.amount, e.currency_code),
-                format_amount(e.total_dzd, "DA"),
+                e.amount,             # [GOLDEN PRINCIPLE] raw float
+                e.total_dzd,          # [GOLDEN PRINCIPLE] raw float
                 compte_str,
                 paiement,
                 e.reference or ""

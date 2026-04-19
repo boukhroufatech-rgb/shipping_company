@@ -26,7 +26,7 @@ from .status_filter import StatusFilter
 from .export_dialog import ExportPreviewDialog
 from .column_definitions import (
     get_column_schema, get_headers_from_schema, get_align_map_from_schema,
-    get_summable_columns, get_hidden_columns
+    get_summable_columns, get_hidden_columns, get_column_types_from_schema
 )
 from utils.icon_manager import IconManager
 from core.themes import THEMES
@@ -115,6 +115,7 @@ class EnhancedTableView(QWidget):
         self._auto_fit_enabled = True
         self._row_numbering_enabled = False
         self._header_align_map = {}  # [CUSTOM] 2026-04-03 - Aligned columns
+        self._column_types = {}      # [GOLDEN PRINCIPLE] 2026-04-18 - Schema-driven column types
         self._running_balance_col = -1 # Index de la colonne du solde
         self._initial_balance = 0.0
         
@@ -455,15 +456,24 @@ class EnhancedTableView(QWidget):
                 total = 0.0
                 numeric_count = 0
                 for row in range(self.proxy_model.rowCount()):
-                    val_str = str(self.proxy_model.index(row, col).data())
-                    # Extraire seulement les nombres
-                    clean_val = re.sub(r'[^\d.,-]', '', val_str).replace(',', '.')
+                    # [GOLDEN PRINCIPLE] 2026-04-18 - Lire UserRole (valeur brute) pas le texte affiché
+                    proxy_idx = self.proxy_model.index(row, col)
+                    source_idx = self.proxy_model.mapToSource(proxy_idx)
+                    raw = self.model.data(source_idx, Qt.ItemDataRole.UserRole)
                     try:
-                        if clean_val and clean_val != "." and clean_val != "-":
-                            total += float(clean_val)
+                        if raw is not None and raw != "":
+                            total += float(raw)
                             numeric_count += 1
-                    except ValueError:
-                        continue
+                    except (ValueError, TypeError):
+                        # Fallback: parser le texte affiché
+                        val_str = str(proxy_idx.data() or "")
+                        clean_val = re.sub(r'[^\d.,-]', '', val_str).replace(',', '.')
+                        try:
+                            if clean_val and clean_val not in (".", "-"):
+                                total += float(clean_val)
+                                numeric_count += 1
+                        except ValueError:
+                            continue
 
                 # [UNIFIED] 2026-04-08 - Afficher somme seulement si la colonne contient des nombres réels
                 if numeric_count > 0 and total != 0:
@@ -505,6 +515,8 @@ class EnhancedTableView(QWidget):
         headers = get_headers_from_schema(schema)
         align_map = get_align_map_from_schema(schema)
         self._summable_columns = get_summable_columns(schema)
+        # [GOLDEN PRINCIPLE] 2026-04-18 - Store column types for formatting in add_row()
+        self._column_types = get_column_types_from_schema(schema)
 
         self.set_headers(headers, align_map)
 
@@ -562,88 +574,138 @@ class EnhancedTableView(QWidget):
         QTimer.singleShot(100, self._on_data_changed)
 
     def add_row(self, data: list, color: str = None, is_active: bool = True):
-        """Ajoute une ligne. Si N° est activé, insère l'index auto formaté."""
+        """
+        [GOLDEN PRINCIPLE] 2026-04-18
+        Ajoute une ligne.
+        - Backend fournit des valeurs RAW (float, str, date ISO)
+        - add_row() formate pour l'affichage selon _column_types (schéma central)
+        - Valeur brute stockée dans UserRole pour footer et calculs exacts
+        """
         if self._row_numbering_enabled:
             data_copy = list(data)
-            # Stocker le numéro formaté pour l'affichage: 1
-            # Et utiliser UserRole pour le tri: 000001
             row_num = self.model.rowCount() + 1
-            data_copy[0] = str(row_num)  # Affichage: 1
+            data_copy[0] = str(row_num)
             row_to_add = data_copy
         else:
             row_to_add = data
-            
+
         items = []
         for col_idx, value in enumerate(row_to_add):
             if isinstance(value, QStandardItem):
                 item = value
                 if not item.isCheckable():
                     item.setEditable(False)
-            else:
-                val_str = str(value) if value is not None else ""
-                item = QStandardItem(val_str)
-                item.setEditable(False)
-                
-                # [CUSTOM] 2026-04-03 - N° column: display 1 but sort properly
-                if col_idx == 0 and self._row_numbering_enabled:
-                    # Pour le tri: stocker la valeur numérique dans UserRole
-                    item.setData(self.model.rowCount() + 1, Qt.ItemDataRole.UserRole)
-            
-            # --- ALIGNEMENT UNIFIÉ ---
-            align_type = self._header_align_map.get(col_idx, 'auto')  # [FIX] 2026-04-04 - défaut 'auto' pour activer la détection automatique
+                items.append(item)
+                continue
 
-            # Auto-détection améliorée si pas spécifié
+            # --- [GOLDEN PRINCIPLE] Formatage selon le type de colonne ---
+            col_type = self._column_types.get(col_idx, "text")
+            raw_value = value  # Valeur brute pour UserRole
+
+            if value is None or value == "":
+                display_str = ""
+            elif col_type == "amount" or col_type == "number":
+                try:
+                    # Nettoyer et convertir en float si ce n'est pas déjà
+                    if isinstance(value, (int, float)):
+                        raw_float = float(value)
+                    else:
+                        clean = str(value).replace(" ", "").replace(",", ".").replace("DA", "").replace("EUR", "").replace("USD", "").replace("$", "").replace("€", "")
+                        raw_float = float(clean) if clean and clean not in (".", "-") else 0.0
+                    raw_value = raw_float
+                    display_str = f"{raw_float:,.2f}" if col_type == "amount" else f"{raw_float:,.2f}"
+                except (ValueError, TypeError):
+                    display_str = str(value)
+            elif col_type == "percentage":
+                try:
+                    if isinstance(value, (int, float)):
+                        raw_float = float(value)
+                    else:
+                        clean = str(value).replace("%", "").replace(",", ".").strip()
+                        raw_float = float(clean) if clean else 0.0
+                    raw_value = raw_float
+                    display_str = f"{raw_float:.2f}%"
+                except (ValueError, TypeError):
+                    display_str = str(value)
+            elif col_type == "date":
+                # Accepte ISO (2026-04-18) → affiche DD/MM/YYYY
+                try:
+                    s = str(value).strip()
+                    if s and "-" in s and len(s) >= 10:
+                        parts = s[:10].split("-")
+                        if len(parts) == 3:
+                            display_str = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                        else:
+                            display_str = s
+                    else:
+                        display_str = s
+                except Exception:
+                    display_str = str(value)
+            else:
+                display_str = str(value) if value is not None else ""
+
+            item = QStandardItem(display_str)
+            item.setEditable(False)
+            # [GOLDEN PRINCIPLE] Stocker valeur brute pour footer et calculs
+            item.setData(raw_value, Qt.ItemDataRole.UserRole)
+
+            # N° column: stocker valeur numérique pour tri correct
+            if col_idx == 0 and self._row_numbering_enabled:
+                item.setData(self.model.rowCount() + 1, Qt.ItemDataRole.UserRole)
+
+            # --- ALIGNEMENT selon type de colonne ou header ---
+            align_type = self._header_align_map.get(col_idx, 'auto')
+
             if align_type == 'auto':
                 if col_idx == 0 and self._row_numbering_enabled:
                     align_type = 'center'
-                elif 'DA' in val_str or 'EUR' in val_str or 'USD' in val_str or '$' in val_str or '€' in val_str:
+                elif col_type in ("amount", "number", "percentage"):
+                    align_type = 'right'
+                elif col_type == "date":
+                    align_type = 'center'
+                elif col_type == "status":
+                    align_type = 'center'
+                elif 'DA' in display_str or 'EUR' in display_str or 'USD' in display_str or '$' in display_str or '€' in display_str:
                     align_type = 'amount'
-                elif '%' in val_str:
+                elif '%' in display_str:
                     align_type = 'percentage'
-                elif self._is_date(val_str):
+                elif self._is_date(display_str):
                     align_type = 'date'
-                elif self._is_status(val_str):
+                elif self._is_status(display_str):
                     align_type = 'status'
-                elif self._is_code(val_str):
+                elif self._is_code(display_str):
                     align_type = 'code'
-                elif self._is_phone(val_str):
+                elif self._is_phone(display_str):
                     align_type = 'phone'
                 else:
-                    # Vérifier si c'est un nombre
-                    clean = val_str.replace(' ', '').replace(',', '').replace('.', '')
-                    if clean.replace('-', '').isdigit():
+                    clean_check = display_str.replace(' ', '').replace(',', '').replace('.', '')
+                    if clean_check.replace('-', '').isdigit():
                         align_type = 'amount'
                     else:
                         align_type = 'left'
 
-            # Appliquer l'alignement selon le type
             if align_type == 'center':
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-            elif align_type == 'right' or align_type == 'amount' or align_type == 'percentage':
+            elif align_type in ('right', 'amount', 'percentage'):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            elif align_type == 'date' or align_type == 'status' or align_type == 'code' or align_type == 'phone':
+            elif align_type in ('date', 'status', 'code', 'phone'):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-            else:  # left
+            else:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            
-            # [UNIFIED] 2026-04-08 - Appliquer couleurs soldes depuis settings
-            # Détecter si la valeur est un montant (contient DA, EUR, USD ou est un nombre)
-            if align_type == 'right' or align_type == 'amount':
-                # Extraire le nombre pour déterminer le signe
-                clean = val_str.replace(' ', '').replace(',', '.').replace('DA', '').replace('EUR', '').replace('USD', '').replace('$', '').replace('€', '')
+
+            # Colorier les montants (positif/négatif)
+            if align_type in ('right', 'amount') or col_type in ('amount', 'number'):
                 try:
-                    amount = float(clean) if clean and clean != '.' and clean != '-' else 0
-                    # Charger les couleurs depuis settings
+                    raw_num = raw_value if isinstance(raw_value, (int, float)) else 0.0
                     color_pos = self.settings_service.get_setting("color_positive_balance", "#238636")
                     color_neg = self.settings_service.get_setting("color_negative_balance", "#f85149")
-                    
-                    if amount > 0:
+                    if raw_num > 0:
                         item.setForeground(QColor(color_pos))
-                    elif amount < 0:
+                    elif raw_num < 0:
                         item.setForeground(QColor(color_neg))
                 except (ValueError, AttributeError):
                     pass
-            
+
             # Styles (Actif/Inactif/Couleur)
             if not is_active:
                 item.setForeground(QColor("#8b949e"))
@@ -652,9 +714,9 @@ class EnhancedTableView(QWidget):
                 item.setFont(font)
             elif color:
                 item.setForeground(QColor(color))
-                
+
             items.append(item)
-            
+
         self.model.appendRow(items)
         return self.model.rowCount() - 1
 

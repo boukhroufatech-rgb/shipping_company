@@ -72,7 +72,9 @@ def create_quick_add_layout(combo, callback):
             background-color: #238636;
         }
     """)
-    btn.clicked.connect(callback)
+    # [FIX] QPushButton.clicked يمرر bool (checked) للـ callback
+    # نستخدم lambda لتمرير combo مباشرة بدلاً من bool
+    btn.clicked.connect(lambda checked=False: callback(combo))
 
     layout.addWidget(combo)
     layout.addWidget(btn)

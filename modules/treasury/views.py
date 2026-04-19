@@ -79,8 +79,7 @@ class AccountsTab(QWidget):
         layout = QVBoxLayout(self)
         
         self.table = EnhancedTableView(table_id="treasury_accounts")
-        self.table.set_headers(["N°", "ID", "Code", "Nom", "Type", "Devise", "Solde Initial", "Solde", "Principal"])
-        self.table.hide_column(2) # Code technique
+        self.table.set_headers_from_schema("treasury_accounts")  # [GOLDEN PRINCIPLE] schema centralisé
         
         self.table.addClicked.connect(self.add_account)
         self.table.editClicked.connect(self.edit_account)
@@ -106,8 +105,8 @@ class AccountsTab(QWidget):
                 acc['name'],
                 acc['account_type'],
                 acc['currency_code'],
-                format_amount(acc.get('initial_balance', 0), "DA"),
-                format_amount(acc['balance'], "DA"),
+                acc.get('initial_balance', 0),   # [GOLDEN PRINCIPLE] raw float
+                acc['balance'],                   # [GOLDEN PRINCIPLE] raw float
                 "⭐" if acc['is_main'] else ""
             ], is_active=acc['is_active'])
         self.table.resize_columns_to_contents()
@@ -187,9 +186,14 @@ class AccountsTab(QWidget):
                     show_error(self, "Erreur", message)
 
     def delete_account(self, row: int):
-        from components.dialogs import confirm_action
-        account_id = int(self.table.get_row_data(row)[1])
-        account_name = self.table.get_row_data(row)[3]
+        from components.dialogs import confirm_action, show_warning
+        row_data = self.table.get_row_data(row)
+        account_id = int(row_data[1])
+        account_name = row_data[3]
+        is_main = row_data[8] == "⭐"  # [PROTECTION] 2026-04-18 - Compte principal protégé
+        if is_main:
+            show_warning(self, "Action interdite", f"Le compte principal '{account_name}' ne peut pas être archivé.")
+            return
         if confirm_action(self, "Archiver", f"Voulez-vous vraiment archiver le compte '{account_name}' ?"):
             success, message = self.service.delete_account(account_id)
             if success:

@@ -116,11 +116,7 @@ class CurrenciesSummaryTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.table = EnhancedTableView(table_id="currency_summary")
-        self.table.set_headers([
-            "N°", "Devise", "Nom", "Compte Trésorerie",
-            "Total Acheté (+)", "Total Consommé (-)", "Solde Actuel",
-            "Valeur Totale (DA)", "Solde en DA"
-        ])
+        self.table.set_headers_from_schema("currency_summary")  # [GOLDEN PRINCIPLE]
 
         self.table.addClicked.connect(self.add_currency)
         self.table.editClicked.connect(self.edit_currency)
@@ -140,11 +136,11 @@ class CurrenciesSummaryTab(QWidget):
                 s['code'],
                 s['name'],
                 s['account_name'],
-                format_amount(s['total_purchased']),
-                format_amount(s['total_consumed']),
-                format_amount(s['balance']),
-                format_amount(s['total_value_dzd'], "DA"),
-                format_amount(s['balance_dzd'], "DA")
+                s['total_purchased'],      # [GOLDEN PRINCIPLE] raw float
+                s['total_consumed'],       # [GOLDEN PRINCIPLE] raw float
+                s['balance'],              # [GOLDEN PRINCIPLE] raw float
+                s['total_value_dzd'],      # [GOLDEN PRINCIPLE] raw float
+                s['balance_dzd'],          # [GOLDEN PRINCIPLE] raw float
             ])
 
         self.table.resize_columns_to_contents()
@@ -236,7 +232,7 @@ class SupplierPaymentsTab(QWidget):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.table = EnhancedTableView(table_id="supplier_payments_history")
-        self.table.set_headers(["N°", "Date", "Fournisseur", "Montant Payé", "Caisse Source", "Référence"])
+        self.table.set_headers_from_schema("supplier_payments_history")  # [GOLDEN PRINCIPLE]
         self.table.addClicked.connect(self.add_payment)
         self.table.editClicked.connect(self.edit_payment)
         self.table.deleteClicked.connect(self.delete_payment)
@@ -253,13 +249,13 @@ class SupplierPaymentsTab(QWidget):
         self.table.clear_rows()
         for i, p in enumerate(payments):
             self.table.add_row([
-                str(i + 1),
+                None,                    # N° auto
                 str(p['id']),
-                format_date(p['date']),
+                p['date'],               # [GOLDEN PRINCIPLE] raw date → add_row() formate DD/MM/YYYY
                 p['supplier_name'],
-                f"{format_amount(p['amount'])} {p['currency_symbol']}",
+                p['amount'],             # [GOLDEN PRINCIPLE] raw float
                 p['account_name'],
-                p['reference']
+                p['reference'] or ""
             ], is_active=p['is_active'])
         self.table.resize_columns_to_contents()
 
@@ -325,11 +321,7 @@ class CurrencyPurchasesTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.table = EnhancedTableView(table_id="currency_purchases")
-        self.table.set_headers([
-            "N°", "Date", "Devise", "Fournisseur",
-            "Montant Devise", "Taux", "Total DA", "Consommé", "Rest",
-            "Paiement", "Référence"
-        ])
+        self.table.set_headers_from_schema("currency_purchases")  # [GOLDEN PRINCIPLE]
 
         self.table.addClicked.connect(self.add_purchase)
         self.table.editClicked.connect(self.edit_purchase)
@@ -352,14 +344,14 @@ class CurrencyPurchasesTab(QWidget):
             self.table.add_row([
                 None,
                 str(p['id']),
-                format_date(p['date']),
+                p['date'],               # [GOLDEN PRINCIPLE] raw date
                 p['currency_code'],
                 p['supplier_name'],
-                format_amount(p['amount']),
-                format_amount(p['rate']),
-                format_amount(p['total_dzd'], "DA"),
-                format_amount(consumed),
-                format_amount(remaining),
+                p['amount'],             # [GOLDEN PRINCIPLE] raw float
+                p['rate'],               # [GOLDEN PRINCIPLE] raw float
+                p['total_dzd'],          # [GOLDEN PRINCIPLE] raw float
+                consumed,                # [GOLDEN PRINCIPLE] raw float
+                remaining,               # [GOLDEN PRINCIPLE] raw float
                 "Espèce" if p['payment_type'] == PAYMENT_TYPE_CASH else "Crédit",
                 p['reference'] or ""
             ], is_active=p['is_active'])
@@ -430,7 +422,7 @@ class SuppliersTab(QWidget):
         }
         tid = table_ids.get(self.supplier_type_filter, "currency_suppliers")
         self.table = EnhancedTableView(table_id=tid)
-        self.table.set_headers(["N°", "ID", "Nom", "Type", "Contact", "Téléphone", "Solde (Dette)"])
+        self.table.set_headers_from_schema("suppliers")  # [GOLDEN PRINCIPLE]
 
         self.table.addClicked.connect(self.add_supplier)
         self.table.editClicked.connect(self.edit_supplier)
@@ -454,8 +446,6 @@ class SuppliersTab(QWidget):
             SUPPLIER_TYPE_SHIPPING: "Fret/Logistique"
         }
         for s in suppliers:
-            # Récupérer le symbole de la devise (DA par défaut)
-            symbol = s.get('currency_symbol', "DA")
             self.table.add_row([
                 None,
                 str(s['id']),
@@ -463,7 +453,7 @@ class SuppliersTab(QWidget):
                 type_map.get(s['supplier_type'], s['supplier_type']),
                 s['contact'] or "",
                 s['phone'] or "",
-                format_amount(s['balance'], symbol)
+                s['balance'],            # [GOLDEN PRINCIPLE] raw float
             ], is_active=s['is_active'])
         self.table.resize_columns_to_contents()
 
