@@ -273,11 +273,7 @@ class TransactionsTab(QWidget):
 
         # Table avec 11 colonnes
         self.table = EnhancedTableView(table_id="treasury_transactions")
-        self.table.set_headers([
-            "N°", "ID", "Date", "Source", "Compte", 
-            "Type", "Montant", "Moyen Paiement", 
-            "Catégorie", "Statut", "Utilisateur", "Observation"
-        ])
+        self.table.set_headers_from_schema("treasury_transactions")  # [GOLDEN PRINCIPLE] schema centralisé
 
         # Actions (pas de modification depuis le journal)
         self.table.addClicked.connect(self.add_transaction)
@@ -376,17 +372,18 @@ class TransactionsTab(QWidget):
             is_credit = trans['type'] == TRANSACTION_TYPE_CREDIT
             amount_str = f"+ {format_amount(trans['amount'], 'DA')}" if is_credit else f"- {format_amount(trans['amount'], 'DA')}"
 
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values (except display-only enriched fields)
             row_idx = self.table.add_row([
                 None,  # N°
                 str(trans['id']),  # ID
-                trans['date'].strftime("%d/%m/%Y"),  # Date
-                source_display,  # Source
+                trans['date'] if isinstance(trans['date'], str) else trans['date'].isoformat(),  # Raw ISO date
+                source_display,  # Source (display-enriched, kept for readability)
                 trans['account_name'],  # Compte
                 trans['type'],  # Type
-                amount_str,  # Montant avec signe
-                payment_display,  # Moyen de paiement
+                trans['amount'],  # [FIX] Raw amount without +/- sign
+                payment_display,  # Moyen de paiement (display-enriched, kept for readability)
                 trans.get('category', 'DIVERS'),  # Catégorie
-                status_display,  # Statut
+                status_display,  # Statut (display-enriched, kept for readability)
                 user_display,  # Utilisateur
                 obs_display  # Observation
             ], is_active=trans['is_active'])
@@ -539,11 +536,8 @@ class TransfersTab(QWidget):
         layout.addLayout(filter_layout)
 
         # Table
-        self.table = EnhancedTableView(table_id="transfers_table")
-        self.table.set_headers([
-            "N°", "ID", "Date", "De (Source)", "À (Destination)", 
-            "Montant", "Référence", "Description", "Statut"
-        ])
+        self.table = EnhancedTableView(table_id="treasury_transfers")
+        self.table.set_headers_from_schema("treasury_transfers")  # [GOLDEN PRINCIPLE] schema centralisé
 
         # [CUSTOM] Actions: Utilise les boutons par defaut du EnhancedTableView
         # [WHY] Nouveau -> _add_transfer (ouvre TreasuryTransferDialog)
@@ -629,13 +623,14 @@ class TransfersTab(QWidget):
             description = main_trans.get('description', '')[:50]
             status = main_trans.get('status', 'VALIDEE')
 
+            # [GOLDEN PRINCIPLE] 2026-04-19 - Pass raw values
             row_idx = self.table.add_row([
                 str(row_num),
                 str(main_trans['id']),
-                trans_date,
+                main_trans['date'] if isinstance(main_trans['date'], str) else main_trans['date'].isoformat(),  # Raw ISO date
                 source_name,
                 dest_name,
-                format_amount(amount, "DA"),
+                amount,  # Raw float
                 ref,
                 description,
                 status_icons.get(status, status)
